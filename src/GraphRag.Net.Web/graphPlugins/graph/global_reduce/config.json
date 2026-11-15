@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "description": "全局检索 reduce 阶段：汇总关键点生成最终答案",
+  "execution_settings": {
+    "default": {
+      "temperature": 0.3
+    }
+  }
+}

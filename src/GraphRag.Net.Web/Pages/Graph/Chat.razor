@@ -182,22 +182,52 @@
                         </div>
                     </div>
                     
+                    <div class="form-group">
+                        <label class="form-label">
+                            <Icon Type="experiment" /> 检索模式
+                        </label>
+                        <select class="ant-input ant-input-lg" style="width: 100%;" @bind="_searchMode">
+                            @foreach (var mode in _modeList)
+                            {
+                                <option value="@mode.Value">@mode.Label</option>
+                            }
+                        </select>
+                    </div>
+
                     <div class="action-buttons">
-                        <Button Type="@ButtonType.Primary" 
-                                OnClick="Search" 
+                        <Button Type="@ButtonType.Primary"
+                                OnClick="SearchByMode"
                                 Size="@AntSizeLDSType.Large"
                                 Class="primary-button"
                                 Style="flex: 1;">
-                            <Icon Type="search" /> 节点搜索
+                            <Icon Type="search" /> 开始检索
                         </Button>
-                        <Button Type="@ButtonType.Primary" 
-                                OnClick="Search1" 
+                        <Button Type="@ButtonType.Default"
+                                OnClick="GenerateQuestionsAsync"
                                 Size="@AntSizeLDSType.Large"
-                                Class="primary-button"
+                                Class="secondary-button"
                                 Style="flex: 1;">
-                            <Icon Type="cluster" /> 社区搜索
+                            <Icon Type="bulb" /> 生成候选追问
                         </Button>
                     </div>
+
+                    @if (_questions.Count > 0)
+                    {
+                        <div class="result-area" style="margin-top: 16px;">
+                            <p class="form-label">候选追问（点击填入输入框）</p>
+                            <ul style="margin: 0; padding-left: 20px;">
+                                @foreach (var q in _questions)
+                                {
+                                    <li style="margin-bottom: 6px;">
+                                        <a href="#"
+                                           @onclick="() => UseQuestion(q)"
+                                           @onclick:preventDefault
+                                           style="color: #1890ff;">@q</a>
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
                     
                     <Divider Style="margin: 20px 0;" />
                     

@@ -32,5 +32,12 @@ namespace GraphRag.Net.Repositories
         /// </summary>
         [SugarColumn(ColumnDataType = "varchar(2000)")]
         public string? Desc { get; set; }
+
+        /// <summary>
+        /// 来源文本单元ID（逗号分隔）。对齐 GraphRAG 的 entity.text_unit_ids，
+        /// 用于把实体回溯到原始文本块。
+        /// </summary>
+        [SugarColumn(ColumnDataType = "text")]
+        public string? TextUnitIds { get; set; }
     }
 }

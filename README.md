@@ -12,6 +12,43 @@
 
 本项目为demo示例，仅用于学习GraphRAG思路。
 
+## 功能迭代路线图（对齐 microsoft/graphrag）
+
+本项目定位是「.NET 简化实现」，迭代原则是：**优先补齐决定 GraphRAG 效果的检索闭环，
+不照搬需要重型基础设施（分层 Leiden / NLP 抽取 / 增量索引 / CLI 提示词调优）的部分。**
+
+### 能力差距分析与取舍
+
+| 参考 GraphRAG 能力 | 迭代前 | 结论 | 取舍理由 |
+| --- | --- | --- | --- |
+| TextUnit + 实体溯源（text_unit_ids） | ❌ 仅存节点文本 | ✅ 本轮加入 | Basic Search、引用溯源、原文增强的共同地基；改动小、收益面广 |
+| Basic Search（基础向量 RAG） | ❌ | ✅ 本轮加入 | 提供基线对照与图谱检索失败时的兜底，成本极低 |
+| 结构化社区报告（title/rating/findings） | ⚠️ 仅纯文本摘要 | ✅ 本轮加入 | 全局检索 map-reduce 的输入质量完全取决于报告结构，必须先补 |
+| Global Search（动态社区选择 + Map-Reduce） | ⚠️ 单次拼接全部摘要 | ✅ 本轮加入 | GraphRAG 最核心差异点；「把所有社区摘要塞进一个 prompt」在大索引下必然超限 |
+| Question Generation（候选追问） | ❌ | ✅ 本轮加入 | 纯提示词能力，无基础设施依赖，直接提升对话体验 |
+| 分层 Leiden 社区（levels/parent/children） | ⚠️ 单层标签传播 | ⏸ 暂缓 | 需引入层级聚类实现；已预留 `Communities.Level`，列为下一轮 |
+| DRIFT Search | ❌ | ⏸ 暂缓 | primer → follow-up → 层级归并三阶段复杂度高，且收益依赖分层社区 |
+| Claims / Covariates 抽取 | ❌ | ⏸ 暂缓 | 参考实现默认关闭且需提示词调优，面向特定风控领域，通用性低 |
+| 自动提示词调优 / 增量索引 / FastGraphRAG(NLP) | ❌ | ⏸ 暂缓 | 依赖 CLI 工作流、文档快照与 Python NLP 栈，与「简化 .NET 库」定位冲突 |
+| 实体度数 / 关系权重排序 | ❌ | ⏸ 暂缓 | 可作为 Local Search 上下文排序的后续优化，本轮先不引入 |
+
+### 本轮落地的 5 项能力
+
+1. **文本单元与溯源**：新增 `TextUnits` 表与独立向量集合。每次导入落盘原始文本块，
+   节点通过 `TextUnitIds` 回溯来源；`DeleteGraph` 同步清理。对应参考实现 Phase 1 / Phase 6。
+2. **结构化社区报告**：`GraphCommunitiesAsync` 现生成
+   `title / summary / rating / rating_explanation / findings` 报告（新提示词 `community_report`），
+   并把社区报告向量化用于动态选择；LLM 输出异常时自动回退既有纯文本摘要链路。
+   `Communities` 表新增 `Title / FullContent / Findings / Rating / RatingExplanation / Size / Level` 字段。
+3. **Global Search（Map-Reduce）**：动态社区选择（按问题语义召回最相关社区，失败回退影响力评分）→
+   按 token 预算分批 → **map** 并发产出带 0-100 评分的关键点 → 过滤/排序/裁剪 →
+   **reduce** 汇总为最终答案（保留 `[Data: Reports (...)]` 引用）。对应 `global_search.md`。
+4. **Basic Search**：直接对原始文本单元做向量 RAG，返回答案 + 可追溯来源片段（`[Data: Sources (...)]`），
+   可用作效果基线与兜底。提供单次与流式接口。
+5. **Question Generation**：基于社区报告/全局摘要与历史问题生成候选追问，UI 可点击回填。
+
+> 新增能力集中在 `IGraphSearchService`，与既有 `IGraphService` 解耦，不破坏已有调用方。
+
 ## 核心业务流程
 
 ### 1. 整体架构流程
@@ -185,6 +222,21 @@ graph TD
     "NodeDepth": 3 ,//检索节点深度
     "MaxNodes": 100 //检索最大节点数
 },
+"GraphQuery": {
+    "BasicSearchTopK": 5, //基础检索取回的文本单元数量
+    "BasicSearchMinRelevance": 0.3, //基础检索最小相关度，结果为空自动降阈值重试
+    "DynamicCommunitySelection": true, //是否按问题语义动态挑选社区报告
+    "MaxCommunityReports": 20, //参与全局检索的社区报告上限
+    "MapBatchTokens": 6000, //map 阶段单批次 token 预算
+    "MapMaxLength": 800, //map 阶段单批次答案字数上限
+    "ReduceMaxLength": 1200, //reduce 阶段答案字数上限
+    "MaxReduceTokens": 12000, //reduce 阶段输入 token 预算
+    "MinPointScore": 1, //关键点最低重要性评分（0-100）
+    "ConcurrentCoroutines": 4, //map 阶段并发批次数量
+    "QuestionCount": 5, //候选追问数量
+    "MaxReportFindings": 8, //单个社区报告最多保留的关键发现条数
+    "ResponseType": "多段落、结构清晰的中文回答" //回答长度与格式
+},
 "GraphSys": {
     "RetryCounnt": 2 //重试次数，使用国产模型可能会出现json提取失败，增加重试次数可提高可用性
 }
@@ -206,6 +258,23 @@ http://localhost:5000/swagger
 ## 打开swagger查看接口
 
 ![Graoh](https://github.com/xuzeyu91/GraphRag.Net/blob/main/doc/api.png)
+
+### 新增检索接口（对齐 microsoft/graphrag Query Engine）
+
+| 接口 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/Graph/SearchBasic` | POST | 基础向量 RAG：`{ "index", "input" }`，可加 `?topK=5`。返回 `answer` + `sources`（可追溯文本单元） |
+| `/api/Graph/SearchGlobal` | POST | Map-Reduce 全局检索，可加 `?responseType=...&dynamicSelection=true`。返回答案、带评分的关键点、选中社区 |
+| `/api/Graph/GenerateQuestions` | POST | `{ "index", "history": ["历史问题"], "count": 5 }`，返回候选追问列表 |
+| `/api/Graph/GetTextUnits` | GET | `?index=`，列出原始文本单元（溯源） |
+| `/api/Graph/GetCommunityReports` | GET | `?index=`，列出结构化社区报告（title/rating/findings） |
+
+服务层对应 `IGraphSearchService`（`SearchBasicAsync` / `SearchGlobalAsync` / `GenerateQuestionsAsync`，
+以及 `SearchBasicStreamAsync` / `SearchGlobalStreamAsync` 流式版本）。
+
+> **索引升级说明**：`GraphCommunitiesAsync` 现在生成结构化社区报告并把报告向量化。
+> 对已有索引，升级后建议重新调用一次 `GraphCommunities` 与 `GraphGlobal`，
+> 以获得新的报告字段与动态社区选择能力；数据库表会自动新增所需列（CodeFirst）。
 
 ### 也可以使用界面
 ```

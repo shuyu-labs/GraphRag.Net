@@ -23,6 +23,11 @@
     <Content Remove="graphPlugins\graph\mergedesc\config.json" />
     <Content Remove="graphPlugins\graph\relationship\config.json" />
     <Content Remove="graphPlugins\graph\search\config.json" />
+    <Content Remove="graphPlugins\graph\community_report\config.json" />
+    <Content Remove="graphPlugins\graph\global_map\config.json" />
+    <Content Remove="graphPlugins\graph\global_reduce\config.json" />
+    <Content Remove="graphPlugins\graph\basic_search\config.json" />
+    <Content Remove="graphPlugins\graph\question_gen\config.json" />
   </ItemGroup>
 
   <ItemGroup>
@@ -75,6 +80,31 @@
       <Pack>true</Pack>
     </None>
     <None Update="graphPlugins\graph\search\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\community_report\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\global_map\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\global_reduce\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\basic_search\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\question_gen\skprompt.txt">
       <PackagePath>graphPlugins\</PackagePath>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Pack>true</Pack>

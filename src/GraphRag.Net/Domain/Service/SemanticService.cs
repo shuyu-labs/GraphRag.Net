@@ -4,6 +4,7 @@ using GraphRag.Net.Domain.Interface;
 using GraphRag.Net.Domain.Model.Graph;
 using GraphRag.Net.Options;
 using GraphRag.Net.Repositories;
+using GraphRag.Net.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Memory;
@@ -221,6 +222,109 @@ namespace GraphRag.Net.Domain.Service
             => await _kernel.InvokePluginAsync(
                 "graph", "global_summaries",
                 new Dictionary<string, object?> { ["community"] = community });
+
+        /// <summary>
+        /// 结构化社区报告。对齐 microsoft/graphrag 的 community_report 工作流：
+        /// 输出 title / summary / rating / rating_explanation / findings。
+        /// JSON 解析失败时按 GraphSysOption.RetryCounnt 重试，仍失败返回 null，
+        /// 由 GraphService 回退到旧的纯文本社区摘要链路。
+        /// </summary>
+        public async Task<CommunityReportModel?> CommunityReportAsync(string context)
+        {
+            var retryPolicy = Policy.Handle<Exception>().RetryAsync(GraphSysOption.RetryCounnt, (ex, count) =>
+            {
+                Console.WriteLine($"CommunityReportAsync失败，重试{count}次，异常信息{ex.Message}");
+            });
+            return await retryPolicy.ExecuteAsync<CommunityReportModel?>(async () =>
+            {
+                var json = await _kernel.InvokePluginAsync(
+                    "graph", "community_report",
+                    new Dictionary<string, object?> { ["context"] = context });
+                var report = JsonConvert.DeserializeObject<CommunityReportModel>(json.StripJson());
+                if (report is null || string.IsNullOrWhiteSpace(report.Summary)) return null;
+                report.Findings ??= new List<CommunityFinding>();
+                return report;
+            });
+        }
+
+        public Task<string> GetBasicAnswerAsync(string context, string input, string responseType)
+            => _kernel.InvokePluginAsync(
+                "graph", "basic_search",
+                new Dictionary<string, object?>
+                {
+                    ["context"] = context,
+                    ["input"] = input,
+                    ["response_type"] = responseType
+                });
+
+        public IAsyncEnumerable<StreamingKernelContent> GetBasicAnswerStreamAsync(string context, string input, string responseType)
+            => _kernel.InvokeStreamingAsync(
+                "graph", "basic_search",
+                new Dictionary<string, object?>
+                {
+                    ["context"] = context,
+                    ["input"] = input,
+                    ["response_type"] = responseType
+                });
+
+        /// <summary>
+        /// Global Search 的 map 阶段：产出带重要性评分的关键点 JSON。
+        /// 参考 global_search_map_system_prompt 的 {"points":[{"description","score"}]} 结构。
+        /// </summary>
+        public async Task<MapPointsResult?> GetGlobalMapAsync(string context, string input, int maxLength)
+        {
+            var retryPolicy = Policy.Handle<Exception>().RetryAsync(GraphSysOption.RetryCounnt, (ex, count) =>
+            {
+                Console.WriteLine($"GetGlobalMapAsync失败，重试{count}次，异常信息{ex.Message}");
+            });
+            return await retryPolicy.ExecuteAsync<MapPointsResult?>(async () =>
+            {
+                var json = await _kernel.InvokePluginAsync(
+                    "graph", "global_map",
+                    new Dictionary<string, object?>
+                    {
+                        ["context"] = context,
+                        ["input"] = input,
+                        ["max_length"] = maxLength
+                    });
+                var result = JsonConvert.DeserializeObject<MapPointsResult>(json.StripJson());
+                if (result is null) return null;
+                result.Points ??= new List<KeyPoint>();
+                return result;
+            });
+        }
+
+        public Task<string> GetGlobalReduceAsync(string reportData, string input, string responseType, int maxLength)
+            => _kernel.InvokePluginAsync(
+                "graph", "global_reduce",
+                new Dictionary<string, object?>
+                {
+                    ["report_data"] = reportData,
+                    ["input"] = input,
+                    ["response_type"] = responseType,
+                    ["max_length"] = maxLength
+                });
+
+        public IAsyncEnumerable<StreamingKernelContent> GetGlobalReduceStreamAsync(string reportData, string input, string responseType, int maxLength)
+            => _kernel.InvokeStreamingAsync(
+                "graph", "global_reduce",
+                new Dictionary<string, object?>
+                {
+                    ["report_data"] = reportData,
+                    ["input"] = input,
+                    ["response_type"] = responseType,
+                    ["max_length"] = maxLength
+                });
+
+        public Task<string> GenerateQuestionsAsync(string context, string history, int count)
+            => _kernel.InvokePluginAsync(
+                "graph", "question_gen",
+                new Dictionary<string, object?>
+                {
+                    ["context"] = context,
+                    ["history"] = history,
+                    ["question_count"] = count
+                });
 
         /// <summary>
         /// 获取向量记忆。SK 的 Sqlite/Postgres 连接器已替换为原生实现；

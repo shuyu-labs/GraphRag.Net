@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "description": "基础向量检索：基于原始文本单元回答",
+  "execution_settings": {
+    "default": {
+      "temperature": 0.3
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "description": "生成候选追问问题",
+  "execution_settings": {
+    "default": {
+      "temperature": 0.5
+    }
+  }
+}

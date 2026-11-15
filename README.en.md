@@ -12,6 +12,33 @@ Based on the implementation idea mentioned by Microsoft in the paper, GraphRAG m
 
 This project is a demo example, which is only used to learn GraphRAG ideas.
 
+## Feature Iteration (aligned with microsoft/graphrag)
+
+As a simplified .NET implementation, the iteration rule is: **close the retrieval loop that
+determines GraphRAG quality first, and skip the parts that need heavy infrastructure**
+(hierarchical Leiden / NLP extraction / incremental indexing / CLI prompt tuning).
+
+Newly added in this iteration (see `IGraphSearchService`):
+
+| Capability | What it does |
+| --- | --- |
+| TextUnits + provenance | Stores raw chunks and links entities back via `TextUnitIds`; separate vector collection |
+| Basic Search | Vector RAG over raw text units, returns answer + traceable `[Data: Sources (...)]` |
+| Structured community reports | `title / summary / rating / rating_explanation / findings`, with report embeddings |
+| Global Search (Map-Reduce) | Dynamic community selection → map key points with 0-100 scores → rank/filter → reduce |
+| Question Generation | Generates candidate follow-up questions from dataset themes + conversation history |
+
+Deferred (roadmap): hierarchical Leiden communities (the `Level` column is reserved), DRIFT search,
+claims/covariates, auto prompt tuning, incremental indexing, FastGraphRAG NLP,
+and entity-degree / relationship-weight ranking.
+
+New endpoints: `POST /api/Graph/SearchBasic`, `POST /api/Graph/SearchGlobal`,
+`POST /api/Graph/GenerateQuestions`, `GET /api/Graph/GetTextUnits`,
+`GET /api/Graph/GetCommunityReports`. See the `GraphQuery` config section in `appsettings.json`.
+
+After upgrading an existing index, re-run `GraphCommunities` + `GraphGlobal` once to populate the
+new report fields; CodeFirst adds the required columns automatically.
+
 ## Core Business Process
 
 ### 1. Overall Architecture Flow

@@ -299,9 +299,39 @@ namespace GraphRag.Net.Utils
         }
 
         /// <summary>
+        /// 剥离 LLM 输出中可能包含的 markdown 代码块，并截取最外层 JSON 对象/数组。
+        /// 用于提高国产模型 JSON 提取的容错性。
+        /// </summary>
+        /// <param name="raw">LLM 原始输出</param>
+        /// <returns>可反序列化的 JSON 片段</returns>
+        public static string StripJson(this string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+            var text = raw.Trim();
+            if (text.StartsWith("```", StringComparison.Ordinal))
+            {
+                var firstNewLine = text.IndexOf('\n');
+                if (firstNewLine >= 0) text = text[(firstNewLine + 1)..];
+                var lastFence = text.LastIndexOf("```", StringComparison.Ordinal);
+                if (lastFence >= 0) text = text[..lastFence];
+            }
+            text = text.Trim();
+            int obj = text.IndexOf('{');
+            int arr = text.IndexOf('[');
+            int start;
+            char close;
+            if (arr >= 0 && (obj < 0 || arr < obj)) { start = arr; close = ']'; }
+            else { start = obj; close = '}'; }
+            if (start < 0) return text;
+            int end = text.LastIndexOf(close);
+            if (end <= start) return text;
+            return text.Substring(start, end - start + 1);
+        }
+
+        /// <summary>
         /// \uxxxx转中文,保留换行符号
         /// </summary>
-        /// <param name="unicodeString"></param>
+        /// <param name="value">要转换的对象</param>
         /// <returns></returns>
         public static string Unescape(this string value)
         {

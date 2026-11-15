@@ -6,7 +6,7 @@ namespace GraphRag.Net.Api.Controllers
 {
     [Route("api/[controller]/[action]")]
     [ApiController]
-    public class GraphController(IGraphService _graphService) : ControllerBase
+    public class GraphController(IGraphService _graphService, IGraphSearchService _graphSearchService) : ControllerBase
     {
         /// <summary>
         /// 获取所有的索引数据
@@ -126,11 +126,77 @@ namespace GraphRag.Net.Api.Controllers
             await _graphService.DeleteGraph(index);
             return Ok();
         }
+
+        /// <summary>
+        /// 基础向量检索（Basic Search）：直接基于原始文本单元回答，返回可追溯来源。
+        /// 对应 microsoft/graphrag 的 basic_search，可作为图谱检索的基线与兜底。
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> SearchBasic(InputModel model, [FromQuery] int? topK = null)
+        {
+            var result = await _graphSearchService.SearchBasicAsync(model.Index, model.Input, topK);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// 全局检索（Global Search）：动态社区选择 → map 关键点打分 → reduce 汇总。
+        /// 对应 microsoft/graphrag 的 global_search。
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> SearchGlobal(
+            InputModel model,
+            [FromQuery] string? responseType = null,
+            [FromQuery] bool? dynamicSelection = null)
+        {
+            var result = await _graphSearchService.SearchGlobalAsync(
+                model.Index, model.Input, responseType, dynamicSelection);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// 生成候选追问（Question Generation）。
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> GenerateQuestions(QuestionModel model)
+        {
+            var result = await _graphSearchService.GenerateQuestionsAsync(
+                model.Index, model.History, model.Count);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// 列出索引下的原始文本单元（溯源检视）。
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> GetTextUnits(string index)
+        {
+            return Ok(await _graphSearchService.GetTextUnitsAsync(index));
+        }
+
+        /// <summary>
+        /// 列出索引下的结构化社区报告（title / rating / findings）。
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> GetCommunityReports(string index)
+        {
+            return Ok(await _graphSearchService.GetCommunityReportsAsync(index));
+        }
     }
 
     public class InputModel
     {
         public string Index { get; set; }
         public string Input { get; set; }
+    }
+
+    public class QuestionModel
+    {
+        public string Index { get; set; }
+
+        /// <summary>历史问题（对话上下文），可为空</summary>
+        public List<string>? History { get; set; }
+
+        /// <summary>期望生成的候选问题数量</summary>
+        public int? Count { get; set; }
     }
 }

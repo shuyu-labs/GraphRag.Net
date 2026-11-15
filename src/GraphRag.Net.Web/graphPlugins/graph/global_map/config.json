@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "description": "全局检索 map 阶段：从社区报告批次抽取带评分的关键点",
+  "execution_settings": {
+    "default": {
+      "temperature": 0,
+      "response_format": { "type": "json_object" }
+    }
+  }
+}
