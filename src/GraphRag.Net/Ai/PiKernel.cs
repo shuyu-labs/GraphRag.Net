@@ -247,6 +247,9 @@ namespace Microsoft.SemanticKernel
             double temperature = 0.1;
             bool jsonMode = false;
 
+            // Prompt tuning 产出的覆盖模板优先；执行参数仍从原 config.json 读取。
+            PromptOverrides.TryGet(plugin, function, out var overridden);
+
             try
             {
                 var dir = Path.Combine(RepoFiles.SamplePluginsPath(), plugin, function);
@@ -274,6 +277,7 @@ namespace Microsoft.SemanticKernel
                 // Plugin assets are optional at runtime: fall back to the argument payload.
             }
 
+            if (!string.IsNullOrWhiteSpace(overridden)) template = overridden;
             template ??= BuildFallbackPrompt(args);
             return new PromptSpec(Render(template, args), temperature, jsonMode);
         }

@@ -6,7 +6,13 @@ namespace GraphRag.Net.Api.Controllers
 {
     [Route("api/[controller]/[action]")]
     [ApiController]
-    public class GraphController(IGraphService _graphService, IGraphSearchService _graphSearchService) : ControllerBase
+    public class GraphController(
+        IGraphService _graphService,
+        IGraphSearchService _graphSearchService,
+        ILocalSearchService _localSearchService,
+        IDriftSearchService _driftSearchService,
+        IGraphIndexService _graphIndexService,
+        ICommunityHierarchyService _communityHierarchyService) : ControllerBase
     {
         /// <summary>
         /// 获取所有的索引数据
@@ -181,6 +187,105 @@ namespace GraphRag.Net.Api.Controllers
         {
             return Ok(await _graphSearchService.GetCommunityReportsAsync(index));
         }
+
+        // ---- P0 / P1 新增端点 ----
+
+        /// <summary>Local Search 混合上下文检索（entities + relationships + text units + reports + claims）。</summary>
+        [HttpPost]
+        public async Task<IActionResult> SearchLocal(LocalQueryModel model)
+        {
+            return Ok(await _localSearchService.SearchLocalAsync(model.Index, model.Input, model.History));
+        }
+
+        /// <summary>DRIFT Search（Primer → Follow-up → 层级归并）。</summary>
+        [HttpPost]
+        public async Task<IActionResult> SearchDrift(InputModel model)
+        {
+            return Ok(await _driftSearchService.SearchAsync(model.Index, model.Input));
+        }
+
+        /// <summary>抽取 Claims / Covariates。</summary>
+        [HttpPost]
+        public async Task<IActionResult> ExtractClaims(ClaimQueryModel model)
+        {
+            return Ok(await _graphIndexService.ExtractClaimsAsync(model.Index, model.Force));
+        }
+
+        /// <summary>列出索引下的 claims。</summary>
+        [HttpGet]
+        public async Task<IActionResult> GetClaims(string index)
+        {
+            return Ok(await _graphIndexService.GetClaimsAsync(index));
+        }
+
+        /// <summary>增量索引：按内容哈希只处理变化块。</summary>
+        [HttpPost]
+        public async Task<IActionResult> IncrementalIndex(IncrementalQueryModel model)
+        {
+            return Ok(await _graphIndexService.IncrementalIndexAsync(model.Index, model.Input, model.DocumentId));
+        }
+
+        /// <summary>自动提示词调优（结果写入运行时覆盖，立即生效）。</summary>
+        [HttpPost]
+        public async Task<IActionResult> AutoTunePrompts(TuneQueryModel model)
+        {
+            return Ok(await _graphIndexService.AutoTunePromptsAsync(model.Index, model.Domain));
+        }
+
+        /// <summary>查看当前生效的提示词覆盖。</summary>
+        [HttpGet]
+        public IActionResult GetPromptOverrides()
+        {
+            return Ok(_graphIndexService.GetPromptOverrides());
+        }
+
+        /// <summary>清除提示词覆盖，恢复磁盘提示词。</summary>
+        [HttpGet]
+        public IActionResult ClearPromptOverrides()
+        {
+            _graphIndexService.ClearPromptOverrides();
+            return Ok();
+        }
+
+        /// <summary>索引统计（节点/边/文本单元/社区层级/claims/度数/权重）。</summary>
+        [HttpGet]
+        public async Task<IActionResult> GetIndexStats(string index)
+        {
+            return Ok(await _graphIndexService.GetIndexStatsAsync(index));
+        }
+
+        /// <summary>分层社区各层级统计。</summary>
+        [HttpGet]
+        public IActionResult GetCommunityLevels(string index)
+        {
+            return Ok(_communityHierarchyService.GetLevels(index));
+        }
+    }
+
+    public class LocalQueryModel : InputModel
+    {
+        /// <summary>对话历史</summary>
+        public List<string>? History { get; set; }
+    }
+
+    public class ClaimQueryModel
+    {
+        public string Index { get; set; }
+
+        /// <summary>是否强制重抽</summary>
+        public bool Force { get; set; }
+    }
+
+    public class IncrementalQueryModel : InputModel
+    {
+        /// <summary>文档标识，用于按文档做变更检测</summary>
+        public string? DocumentId { get; set; }
+    }
+
+    public class TuneQueryModel
+    {
+        public string Index { get; set; }
+        public string? Domain { get; set; }
     }
 
     public class InputModel

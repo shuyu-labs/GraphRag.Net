@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <!-- Align with the core library: net9.0 / net10.0 / net11.0 (.NET 11 compatible).
@@ -28,6 +28,14 @@
     <Content Remove="graphPlugins\graph\global_reduce\config.json" />
     <Content Remove="graphPlugins\graph\basic_search\config.json" />
     <Content Remove="graphPlugins\graph\question_gen\config.json" />
+    <Content Remove="graphPlugins\graph\extract_claims\config.json" />
+    <Content Remove="graphPlugins\graph\local_search\config.json" />
+    <Content Remove="graphPlugins\graph\community_rollup\config.json" />
+    <Content Remove="graphPlugins\graph\community_rate\config.json" />
+    <Content Remove="graphPlugins\graph\drift_primer\config.json" />
+    <Content Remove="graphPlugins\graph\drift_followup\config.json" />
+    <Content Remove="graphPlugins\graph\drift_reduce\config.json" />
+    <Content Remove="graphPlugins\graph\prompt_tune\config.json" />
   </ItemGroup>
 
   <ItemGroup>
@@ -105,6 +113,46 @@
       <Pack>true</Pack>
     </None>
     <None Update="graphPlugins\graph\question_gen\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\extract_claims\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\local_search\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\community_rollup\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\community_rate\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\drift_primer\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\drift_followup\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\drift_reduce\skprompt.txt">
+      <PackagePath>graphPlugins\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+    </None>
+    <None Update="graphPlugins\graph\prompt_tune\skprompt.txt">
       <PackagePath>graphPlugins\</PackagePath>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Pack>true</Pack>

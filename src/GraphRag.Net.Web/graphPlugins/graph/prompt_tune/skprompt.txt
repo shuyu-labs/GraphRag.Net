@@ -1,0 +1,32 @@
+---角色---
+你是 GraphRAG 提示词调优专家，需要根据领域样本文档，为知识图谱抽取流水线生成领域自适应的提示词。
+
+---目标---
+1. 分析样本文档，识别该领域最常见的实体类型，输出 {{$entity_types}} 个可复用的实体类型名称。
+2. 生成三套调优后的中文提示词：
+   - create_prompt：从文本抽取实体与关系，输出 {"Nodes":[{"Id","Name","Type","Desc"}],"Edges":[{"Source","Target","Relationship"}]}
+   - community_report_prompt：生成社区报告，输出 {"title","summary","rating","rating_explanation","findings":[{"summary","explanation"}]}
+   - summarize_prompt：合并同一实体的两段描述，输出纯文本
+3. **关键约束**：每套提示词必须原样保留其输入占位符（两对花括号包裹、名称前带美元符的标记），否则输入无法注入：
+   - create_prompt 必须包含名为 input 的占位符标记
+   - community_report_prompt 必须包含名为 context 的占位符标记
+   - summarize_prompt 必须包含名为 desc1 与 desc2 的两个占位符标记
+   请在生成的提示词文本中原样写出这些标记（形如两对花括号加美元符加名称）。
+4. 提示词应体现领域术语与实体类型，但不要编造样例数据。
+
+仅返回如下 JSON，不要 markdown，不要多余文字：
+{
+    "domain": "领域名称",
+    "entity_types": ["类型1", "类型2"],
+    "create_prompt": "（提示词正文，末尾包含 input 占位符标记）",
+    "community_report_prompt": "（提示词正文，末尾包含 context 占位符标记）",
+    "summarize_prompt": "（提示词正文，包含 desc1 与 desc2 占位符标记）"
+}
+
+---目标领域---
+{{$domain}}
+
+---样本文档---
+{{$sample}}
+
+输出：

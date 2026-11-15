@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "description": "Local Search 混合上下文问答",
+  "execution_settings": {
+    "default": {
+      "temperature": 0.2
+    }
+  }
+}

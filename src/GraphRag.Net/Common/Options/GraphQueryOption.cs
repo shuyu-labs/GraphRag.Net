@@ -49,5 +49,85 @@ namespace GraphRag.Net.Options
 
         /// <summary>默认回答长度与格式描述（response_type）。</summary>
         public static string ResponseType { get; set; } = "多段落、结构清晰的中文回答";
+
+        // ---- P0-1 分层社区 ----
+        /// <summary>最大社区层级数（含 level 0）。</summary>
+        public static int CommunityMaxLevels { get; set; } = 3;
+
+        /// <summary>层级递归停止阈值：上一层社区数不再减少时停止。</summary>
+        public static int CommunityMinSize { get; set; } = 1;
+
+        /// <summary>Global Search 默认使用的社区层级；-1 表示自动选择最粗层级。</summary>
+        public static int GlobalCommunityLevel { get; set; } = -1;
+
+        // ---- P0-3 图统计 ----
+        /// <summary>是否维护 degree / frequency / weight / community rank。</summary>
+        public static bool EnableGraphStats { get; set; } = true;
+
+        // ---- P0-2 Local Search 混合上下文 ----
+        /// <summary>上下文预算中原文文本单元的比例。</summary>
+        public static double LocalTextUnitProp { get; set; } = 0.5;
+
+        /// <summary>上下文预算中社区报告的比例。</summary>
+        public static double LocalCommunityProp { get; set; } = 0.2;
+
+        /// <summary>Local Search 上下文 token 预算。</summary>
+        public static int LocalMaxContextTokens { get; set; } = 12000;
+
+        /// <summary>Local Search 候选实体数上限。</summary>
+        public static int LocalTopKEntities { get; set; } = 10;
+
+        /// <summary>Local Search 候选关系数上限。</summary>
+        public static int LocalTopKRelationships { get; set; } = 10;
+
+        /// <summary>对话历史最大轮数。</summary>
+        public static int LocalMaxConversationTurns { get; set; } = 5;
+
+        // ---- P1-5 Claims ----
+        /// <summary>导入时是否抽取 claims（默认关闭，与参考实现一致）。</summary>
+        public static bool EnableClaimExtraction { get; set; } = false;
+
+        /// <summary>单个文本单元最多抽取的 claim 数。</summary>
+        public static int ClaimMaxPerTextUnit { get; set; } = 10;
+
+        // ---- P1-6 动态社区选择 ----
+        /// <summary>off / vector / llm。llm 为完整实现（评分 + 层级回退）。</summary>
+        public static string DynamicSelectionMode { get; set; } = "llm";
+
+        /// <summary>LLM 评分阈值（0-100），高于该值视为相关。</summary>
+        public static int DynamicSearchThreshold { get; set; } = 50;
+
+        /// <summary>子社区相关时是否保留父社区。</summary>
+        public static bool DynamicKeepParent { get; set; } = true;
+
+        /// <summary>对同一社区重复评分次数，取最高分。</summary>
+        public static int DynamicNumRepeats { get; set; } = 1;
+
+        /// <summary>无相关社区时向更粗层级回退的最大层级；-1 为不限制。</summary>
+        public static int DynamicMaxLevel { get; set; } = -1;
+
+        // ---- P1-4 DRIFT Search ----
+        /// <summary>每个阶段展开的后续问题数。</summary>
+        public static int DriftKFollowups { get; set; } = 3;
+
+        /// <summary>Primer 阶段社区报告折数。</summary>
+        public static int DriftPrimerFolds { get; set; } = 2;
+
+        /// <summary>DRIFT 递归深度。</summary>
+        public static int DriftNDepth { get; set; } = 2;
+
+        /// <summary>DRIFT follow-up 并发度。</summary>
+        public static int DriftConcurrency { get; set; } = 3;
+
+        // ---- P1-7 增量索引 ----
+        /// <summary>是否启用内容哈希变更检测。</summary>
+        public static bool IncrementalEnabled { get; set; } = true;
+
+        // ---- P1-8 Prompt Tune ----
+        /// <summary>调优时采样的文本单元数量。</summary>
+        public static int PromptTuneSampleSize { get; set; } = 5;
+
+        /// <summary>生成的领域实体类型数量。</summary>
+        public static int PromptTuneEntityTypes { get; set; } = 8;
     }
 }

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "description": "自动提示词调优（Prompt Tune）",
+  "execution_settings": {
+    "default": {
+      "temperature": 0.3,
+      "response_format": { "type": "json_object" }
+    }
+  }
+}

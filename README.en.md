@@ -1,4 +1,4 @@
-[简体中文](./README.md) | English
+﻿[简体中文](./README.md) | English
 
 ## This is a simple implementation of dotnet referring to GraphRag
 
@@ -14,30 +14,49 @@ This project is a demo example, which is only used to learn GraphRAG ideas.
 
 ## Feature Iteration (aligned with microsoft/graphrag)
 
-As a simplified .NET implementation, the iteration rule is: **close the retrieval loop that
-determines GraphRAG quality first, and skip the parts that need heavy infrastructure**
-(hierarchical Leiden / NLP extraction / incremental indexing / CLI prompt tuning).
+After two iterations the .NET simplified implementation now covers the full core retrieval
+loop of microsoft/graphrag. Parts needing heavy infrastructure (exact Leiden / FastGraphRAG NLP /
+CLI workflows) remain approximated or deferred.
 
-Newly added in this iteration (see `IGraphSearchService`):
+| Capability | Status | Implementation |
+| --- | --- | --- |
+| TextUnits + provenance | done | `TextUnits` table + `Nodes.TextUnitIds` + dedicated vector collection |
+| Basic Search | done | `SearchBasicAsync`, answer + traceable `[Data: Sources]` |
+| Structured community reports | done | `title / summary / rating / rating_explanation / findings` |
+| Global Search (Map-Reduce) | done | dynamic selection -> scored map points -> rank/filter -> reduce |
+| Local Search mixed context | done | `ILocalSearchService`: entities / relationships / text units / reports / claims / history under a token budget |
+| Question Generation | done | candidate follow-ups from reports + conversation history |
+| Hierarchical communities | done | `ICommunityHierarchyService`: super-node folding + weighted LPA recursion; a root level covers the whole graph when no cross-community edges exist |
+| Graph statistics | done | `IGraphStatsService`: degree / frequency / weight / community rank |
+| Dynamic community selection | done | `IDynamicCommunitySelectionService`: LLM rating + keep_parent + num_repeats + max_level fallback |
+| DRIFT Search | done | `IDriftSearchService`: Primer -> Follow-up (Local Search) -> hierarchical reduce |
+| Claims / Covariates | done | `Claims` table + `extract_claims` prompt, off by default |
+| Incremental indexing | done | `IncrementalIndexAsync`: content-hash change detection |
+| Auto prompt tuning | done | `AutoTunePromptsAsync` -> runtime `PromptOverrides` |
+| Exact Hierarchical Leiden | approximated | deterministic weighted LPA, no external graph library |
+| Exact tokenizer (tiktoken) | approximated | character/CJK weighted estimate |
+| CLI / multi-format input / multiple vector backends / LLM cache / benchmarks | deferred | platform features beyond a simplified library |
 
-| Capability | What it does |
-| --- | --- |
-| TextUnits + provenance | Stores raw chunks and links entities back via `TextUnitIds`; separate vector collection |
-| Basic Search | Vector RAG over raw text units, returns answer + traceable `[Data: Sources (...)]` |
-| Structured community reports | `title / summary / rating / rating_explanation / findings`, with report embeddings |
-| Global Search (Map-Reduce) | Dynamic community selection → map key points with 0-100 scores → rank/filter → reduce |
-| Question Generation | Generates candidate follow-up questions from dataset themes + conversation history |
+New endpoints: `SearchLocal`, `SearchDrift`, `ExtractClaims`, `GetClaims`, `IncrementalIndex`,
+`AutoTunePrompts`, `GetPromptOverrides`, `ClearPromptOverrides`, `GetIndexStats`,
+`GetCommunityLevels`, plus `SearchBasic` / `SearchGlobal` / `GenerateQuestions` /
+`GetTextUnits` / `GetCommunityReports`. See the `GraphQuery` section in `appsettings.json`.
 
-Deferred (roadmap): hierarchical Leiden communities (the `Level` column is reserved), DRIFT search,
-claims/covariates, auto prompt tuning, incremental indexing, FastGraphRAG NLP,
-and entity-degree / relationship-weight ranking.
+### Regression tests
 
-New endpoints: `POST /api/Graph/SearchBasic`, `POST /api/Graph/SearchGlobal`,
-`POST /api/Graph/GenerateQuestions`, `GET /api/Graph/GetTextUnits`,
-`GET /api/Graph/GetCommunityReports`. See the `GraphQuery` config section in `appsettings.json`.
+An offline regression suite ships with the repo (57 checks, zero external test framework),
+covering legacy behaviour, all P0/P1 features, legacy-DB schema migration and malformed-LLM-output
+fallback:
 
-After upgrading an existing index, re-run `GraphCommunities` + `GraphGlobal` once to populate the
-new report fields; CodeFirst adds the required columns automatically.
+```
+dotnet run --project tests/GraphRag.Net.Regression -f net9.0
+```
+
+It injects a scripted `StreamFn` and deterministic hash embeddings through
+`VectorMemoryProvider.SetFactory`, so no API key is required and results are reproducible.
+
+After upgrading an existing index, re-run `GraphCommunities` + `GraphGlobal` once; CodeFirst adds
+the required columns automatically.
 
 ## Core Business Process
 

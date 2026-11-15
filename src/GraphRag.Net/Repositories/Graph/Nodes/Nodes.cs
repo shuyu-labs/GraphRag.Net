@@ -39,5 +39,11 @@ namespace GraphRag.Net.Repositories
         /// </summary>
         [SugarColumn(ColumnDataType = "text")]
         public string? TextUnitIds { get; set; }
+
+        /// <summary>节点度数（关联边数），对齐 entities.degree</summary>
+        public int Degree { get; set; }
+
+        /// <summary>出现过的文本单元数量，对齐 entities.frequency</summary>
+        public int Frequency { get; set; }
     }
 }

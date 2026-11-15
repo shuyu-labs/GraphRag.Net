@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.RegularExpressions;
 using GraphRag.Net.Domain.Interface;
 using GraphRag.Net.Domain.Model.Graph;
@@ -21,7 +21,8 @@ namespace GraphRag.Net.Domain.Service
         ISemanticService _semanticService,
         ITextUnits_Repositories _textUnits_Repositories,
         ICommunities_Repositories _communities_Repositories,
-        IGlobals_Repositories _globals_Repositories
+        IGlobals_Repositories _globals_Repositories,
+        IDynamicCommunitySelectionService _dynamicSelection
         ) : IGraphSearchService
     {
         // ------------------------------------------------------------------
@@ -173,7 +174,11 @@ namespace GraphRag.Net.Domain.Service
         {
             EnsureQuery(index, input);
 
-            var all = LoadCommunityReports(index);
+            var allReports = LoadCommunityReports(index);
+            var all = GraphQueryOption.GlobalCommunityLevel >= 0
+                ? allReports.Where(c => c.Level == GraphQueryOption.GlobalCommunityLevel).ToList()
+                : allReports;
+            if (all.Count == 0) all = allReports; // 指定层级无报告时回退全部
             if (all.Count == 0)
             {
                 return new GlobalPreparation
@@ -210,39 +215,25 @@ namespace GraphRag.Net.Domain.Service
         }
 
         /// <summary>
-        /// 动态社区选择（对应 dynamic community selection）：按问题语义从社区报告向量集合中
-        /// 取回最相关的社区；集合为空或检索异常时回退到按影响力评分排序。
+        /// 动态社区选择：委托 IDynamicCommunitySelectionService
+        /// （LLM 评分 + keep_parent + 层级回退）；关闭时按评分取前 N。
         /// </summary>
         private async Task<List<CommunityReportData>> SelectCommunitiesAsync(
             string index, string input, List<CommunityReportData> all, bool dynamicSelection)
         {
             int max = Math.Max(1, GraphQueryOption.MaxCommunityReports);
-            if (dynamicSelection && all.Count > max)
-            {
-                try
-                {
-                    var memory = await _semanticService.GetTextMemory();
-                    var ids = new List<string>();
-                    await foreach (var m in memory.SearchAsync(
-                        GraphCollections.Communities(index), input, limit: max, minRelevanceScore: 0.0))
-                    {
-                        ids.Add(m.Metadata.Id);
-                    }
+            if (!dynamicSelection)
+                return all.OrderByDescending(c => c.Rating).ThenByDescending(c => c.Rank).Take(max).ToList();
 
-                    var picked = ids
-                        .Select(id => all.FirstOrDefault(c => c.Id == id))
-                        .Where(c => c is not null)
-                        .Select(c => c!)
-                        .ToList();
-                    if (picked.Count > 0) return picked;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"动态社区选择失败，回退影响力评分排序：{ex.Message}");
-                }
-            }
-
-            return all.OrderByDescending(c => c.Rating).Take(max).ToList();
+            var selected = await _dynamicSelection.SelectAsync(index, input, max);
+            var byId = all.GroupBy(c => c.Id).ToDictionary(g => g.Key, g => g.First());
+            var mapped = selected
+                .Where(c => byId.ContainsKey(c.CommunitieId))
+                .Select(c => byId[c.CommunitieId])
+                .ToList();
+            return mapped.Count > 0
+                ? mapped
+                : all.OrderByDescending(c => c.Rating).ThenByDescending(c => c.Rank).Take(max).ToList();
         }
 
         /// <summary>按 token 预算把社区报告切分为 map 批次。</summary>
@@ -348,7 +339,9 @@ namespace GraphRag.Net.Domain.Service
             public string Id { get; init; } = string.Empty;
             public string Content { get; init; } = string.Empty;
             public double Rating { get; init; }
+            public double Rank { get; init; }
             public int Size { get; init; }
+            public int Level { get; init; }
         }
 
         private List<CommunityReportData> LoadCommunityReports(string index)
@@ -358,7 +351,9 @@ namespace GraphRag.Net.Domain.Service
                     Id = c.CommunitieId,
                     Content = string.IsNullOrWhiteSpace(c.FullContent) ? (c.Summaries ?? string.Empty) : c.FullContent!,
                     Rating = c.Rating,
-                    Size = c.Size
+                    Rank = c.CommunityRank,
+                    Size = c.Size,
+                    Level = c.Level
                 })
                 .Where(c => !string.IsNullOrWhiteSpace(c.Content))
                 .ToList();

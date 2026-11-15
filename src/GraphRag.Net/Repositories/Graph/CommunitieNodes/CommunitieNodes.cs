@@ -24,5 +24,8 @@ namespace GraphRag.Net.Repositories
         /// </summary>
         public string NodeId { get; set; }
 
+        /// <summary>社区层级；0 为最细粒度。既有检索逻辑只使用 Level=0 的行。</summary>
+        public int Level { get; set; }
+
     }
 }

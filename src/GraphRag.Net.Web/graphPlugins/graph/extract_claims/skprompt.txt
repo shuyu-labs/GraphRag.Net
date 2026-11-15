@@ -1,0 +1,34 @@
+---目标---
+你是一个智能助手，帮助分析师从文本中抽取「声明（claims）」：关于实体的、可判断真伪的事实性陈述。
+
+- 只抽取文本明确支持的正向事实陈述，不要推测。
+- 每条声明包含：
+  - subject_id：执行动作/被陈述的实体名称
+  - object_id：受影响的实体名称，未知填 NONE
+  - type：声明类别（可复用，如 合作关系/违规行为/时间事件/属性）
+  - status：TRUE（已确认）、FALSE（被证伪）、SUSPECTED（未核实）
+  - description：包含依据与推理的详细描述
+  - start_date / end_date：ISO-8601 日期，未知填 NONE
+  - source_text：原文中支持该声明的引文
+- 最多输出 {{$max_claims}} 条；若无声明返回空列表。
+
+仅返回如下 JSON，不要 markdown，不要多余文字：
+{
+    "claims": [
+        {
+            "subject_id": "主体",
+            "object_id": "客体",
+            "type": "类别",
+            "status": "SUSPECTED",
+            "description": "描述",
+            "start_date": "NONE",
+            "end_date": "NONE",
+            "source_text": "原文引文"
+        }
+    ]
+}
+
+---文本---
+{{$context}}
+
+输出：

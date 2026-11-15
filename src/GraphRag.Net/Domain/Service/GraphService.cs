@@ -9,6 +9,7 @@ using Microsoft.SemanticKernel.Memory;
 using Microsoft.SemanticKernel.Text;
 using Newtonsoft.Json;
 using SqlSugar;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -24,6 +25,9 @@ namespace GraphRag.Net.Domain.Service
         IGlobals_Repositories _globals_Repositories,
         ICommunityDetectionService _communityDetectionService,
         ITextUnits_Repositories _textUnits_Repositories,
+        IClaims_Repositories _claims_Repositories,
+        ICommunityHierarchyService _communityHierarchyService,
+        IGraphStatsService _graphStatsService,
         Kernel _kernel
         ) : IGraphService
     {
@@ -170,7 +174,14 @@ namespace GraphRag.Net.Domain.Service
         /// <param name="index"></param>
         /// <param name="input"></param>
         /// <returns></returns>
-        public async Task InsertGraphDataAsync(string index, string input)
+        public Task InsertGraphDataAsync(string index, string input)
+            => InsertGraphDataCoreAsync(index, input, null);
+
+        /// <summary>带文档标识的导入，供增量索引按文档管理文本单元。</summary>
+        public Task InsertGraphDataWithDocumentAsync(string index, string input, string documentId)
+            => InsertGraphDataCoreAsync(index, input, documentId);
+
+        private async Task InsertGraphDataCoreAsync(string index, string input, string? documentId)
         {
             if (string.IsNullOrWhiteSpace(index) || string.IsNullOrWhiteSpace(input))
             {
@@ -184,7 +195,7 @@ namespace GraphRag.Net.Domain.Service
 
                 // 对齐 GraphRAG Phase 1 / Phase 6：落盘原始文本单元并写入独立向量集合，
                 // 供 Basic Search 检索、为实体提供 text_unit_ids 溯源。
-                await PersistTextUnitAsync(index, textUnitId, input, textMemory);
+                await PersistTextUnitAsync(index, textUnitId, input, textMemory, documentId);
 
                 var graph = await _semanticService.CreateGraphAsync(input);
                 Dictionary<string, string> nodeDic = new Dictionary<string, string>();
@@ -292,6 +303,8 @@ namespace GraphRag.Net.Domain.Service
                                 {
                                     relationShip.Edge.Id = Guid.NewGuid().ToString();
                                     relationShip.Edge.Index = index;
+                                    relationShip.Edge.Weight = 1;
+                                    relationShip.Edge.TextUnitIds = textUnitId;
                                     _edges_Repositories.Insert(relationShip.Edge);
                                 }
                             }
@@ -310,7 +323,9 @@ namespace GraphRag.Net.Domain.Service
                         Index = index,
                         Source = nodeDic[e.Source],
                         Target = nodeDic[e.Target],
-                        Relationship = e.Relationship
+                        Relationship = e.Relationship,
+                        Weight = 1,
+                        TextUnitIds = textUnitId
                     };
                     _edges_Repositories.Insert(edge);
                 }
@@ -331,6 +346,15 @@ namespace GraphRag.Net.Domain.Service
 
                     for (int i = 1; i < edges.Count(); i++)
                     {
+                        // 合并权重与来源文本单元（对齐 relationships.weight / text_unit_ids）
+                        firstEdge.Weight += Math.Max(1, edges[i].Weight);
+                        foreach (var tu in (edges[i].TextUnitIds ?? string.Empty)
+                            .Split(',', StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            firstEdge.TextUnitIds = AppendTextUnitId(firstEdge.TextUnitIds, tu);
+                        }
+                        firstEdge.TextUnitIds = AppendTextUnitId(firstEdge.TextUnitIds, textUnitId);
+
                         if (firstEdge.Relationship == edges[i].Relationship)
                         {
                             //相同的边进行合并
@@ -339,10 +363,13 @@ namespace GraphRag.Net.Domain.Service
                         }
                         var newDesc = await _semanticService.MergeDesc(firstEdge.Relationship, edges[i].Relationship);
                         firstEdge.Relationship = newDesc;
-                        _edges_Repositories.Update(firstEdge);
                         _edges_Repositories.Delete(edges[i]);
                     }
+                    _edges_Repositories.Update(firstEdge);
                 }
+
+                // 重算 degree / frequency / weight 等图统计信号
+                await _graphStatsService.RecomputeAsync(index);
             }
             catch (Exception ex)
             {
@@ -575,6 +602,11 @@ namespace GraphRag.Net.Domain.Service
                     yield return content;
                 }
             }
+            else
+            {
+                // 无命中时给出明确提示，避免流式接口静默返回空内容
+                yield return new StreamingKernelContent("未在图谱中检索到与问题相关的节点，请尝试其它问题或先导入文档。");
+            }
         }
 
         /// <summary>
@@ -648,157 +680,14 @@ namespace GraphRag.Net.Domain.Service
         /// <returns></returns>
         public async Task GraphCommunitiesAsync(string index)
         {
-            var nodes = _nodes_Repositories.GetList(p => p.Index == index);
-            var edges = _edges_Repositories.GetList(p => p.Index == index);
-            var nodeNames = nodes.GroupBy(n => n.Id).ToDictionary(g => g.Key, g => g.First().Name);
-
-            // 清理旧的社区报告向量（动态社区选择使用），避免残留导致误召回
-            SemanticTextMemory? textMemory = null;
-            try
+            if (string.IsNullOrWhiteSpace(index))
             {
-                textMemory = await _semanticService.GetTextMemory();
-                var oldIds = _communities_Repositories.GetList(p => p.Index == index)
-                    .Select(p => p.CommunitieId).ToList();
-                foreach (var oldId in oldIds)
-                    await textMemory.RemoveAsync(GraphCollections.Communities(index), oldId);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"清理旧社区向量失败（不影响社区生成）：{ex.Message}");
+                throw new ArgumentException("Index required value cannot be null.");
             }
 
-            //删除社区数据
-            _communitieNodes_Repositories.Delete(p => p.Index == index);
-            _communities_Repositories.Delete(p => p.Index == index);
-
-            var graph = new Graph();
-            foreach (var edge in edges)
-            {
-                graph.AddEdge(edge.Source, edge.Target);
-            }
-
-            //重新计算社区
-            var result = _communityDetectionService.FastLabelPropagationAlgorithm(graph);
-
-            Console.WriteLine("开始社区总结（结构化社区报告）");
-            foreach (var kvp in result)
-            {
-                //插入社区节点数据
-                CommunitieNodes communitieNodes = new CommunitieNodes();
-                communitieNodes.Index = index;
-                communitieNodes.CommunitieId = kvp.Value;
-                communitieNodes.NodeId = kvp.Key;
-                _communitieNodes_Repositories.Insert(communitieNodes);
-            }
-            //获取所有社区ID
-            var communitieIds = _communitieNodes_Repositories.GetDB().Queryable<CommunitieNodes>().Where(p => p.Index == index).GroupBy(p => p.CommunitieId).Select(p => p.CommunitieId).ToList();
-
-            foreach (var communitieId in communitieIds)
-            {
-                var nodeList = _communitieNodes_Repositories.GetDB().Queryable<CommunitieNodes>()
-                    .LeftJoin<Nodes>((c, n) => c.NodeId == n.Id)
-                    .Where(c => c.CommunitieId == communitieId)
-                    .Select((c, n) => $"Name:{n.Name}; Type:{n.Type}; Desc:{n.Desc}")
-                    .ToList();
-
-                var nodeDescs = string.Join(Environment.NewLine, nodeList);
-
-                // 对齐 GraphRAG 的 community report 输入：实体 + 社区内部关系
-                var communityNodeIds = _communitieNodes_Repositories
-                    .GetList(p => p.Index == index && p.CommunitieId == communitieId)
-                    .Select(p => p.NodeId).ToHashSet();
-                var relationDescs = edges
-                    .Where(e => communityNodeIds.Contains(e.Source) && communityNodeIds.Contains(e.Target))
-                    .Take(60)
-                    .Select(e => $"Relationship: {nodeNames.GetValueOrDefault(e.Source, e.Source)} -> {nodeNames.GetValueOrDefault(e.Target, e.Target)}; Desc:{e.Relationship}");
-                var reportContext = nodeDescs + Environment.NewLine
-                    + "--- 社区内部关系 ---" + Environment.NewLine
-                    + string.Join(Environment.NewLine, relationDescs);
-
-                var report = await _semanticService.CommunityReportAsync(reportContext);
-                string summaries;
-                if (report is null)
-                {
-                    // 回退既有纯文本摘要链路，保证功能可用性
-                    summaries = await _semanticService.CommunitySummaries(nodeDescs);
-                    report = new CommunityReportModel
-                    {
-                        Title = communitieId,
-                        Summary = summaries,
-                        Rating = 0,
-                        Findings = new List<CommunityFinding>()
-                    };
-                }
-                else
-                {
-                    report.Findings = report.Findings.Take(GraphQueryOption.MaxReportFindings).ToList();
-                    summaries = BuildCommunitySummary(report);
-                }
-
-                var fullContent = RenderCommunityReport(report, communitieId);
-                Communities communities = new Communities()
-                {
-                    CommunitieId = communitieId,
-                    Index = index,
-                    Summaries = summaries,
-                    Title = report.Title,
-                    FullContent = fullContent,
-                    Findings = JsonConvert.SerializeObject(report.Findings),
-                    Rating = report.Rating,
-                    RatingExplanation = report.RatingExplanation,
-                    Size = communityNodeIds.Count,
-                    Level = 0
-                };
-                //插入结构化社区报告数据
-                _communities_Repositories.Insert(communities);
-
-                // 对齐 GraphRAG Phase 6：社区报告向量化，供动态社区选择
-                if (textMemory is not null)
-                {
-                    try
-                    {
-                        await textMemory.SaveInformationAsync(
-                            collection: GraphCollections.Communities(index),
-                            id: communitieId,
-                            text: fullContent);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"社区报告向量化失败（不影响社区生成）：{ex.Message}");
-                    }
-                }
-            }
-        }
-
-        /// <summary>把结构化报告压成纯文本摘要，兼容既有 community_search 提示词与 varchar(4000) 列。</summary>
-        private static string BuildCommunitySummary(CommunityReportModel report)
-        {
-            var sb = new StringBuilder();
-            if (!string.IsNullOrWhiteSpace(report.Title)) sb.AppendLine($"标题：{report.Title}");
-            sb.AppendLine(report.Summary);
-            foreach (var f in report.Findings)
-                sb.AppendLine($"- {f.Summary}：{f.Explanation}");
-            var text = sb.ToString();
-            return text.Length > 3900 ? text[..3900] : text;
-        }
-
-        /// <summary>把结构化报告渲染为 map 阶段可直接使用的社区报告文本。</summary>
-        private static string RenderCommunityReport(CommunityReportModel report, string id)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine($"社区报告 ID: {id}");
-            sb.AppendLine($"标题: {report.Title}");
-            sb.AppendLine($"影响力评分: {report.Rating:0.0}");
-            sb.AppendLine($"评分说明: {report.RatingExplanation}");
-            sb.AppendLine($"摘要: {report.Summary}");
-            sb.AppendLine("关键发现:");
-            int i = 1;
-            foreach (var f in report.Findings)
-            {
-                sb.AppendLine($"{i++}. {f.Summary}");
-                sb.AppendLine($"   {f.Explanation}");
-            }
-            return sb.ToString();
+            // 分层社区检测 + 各层级结构化社区报告 + 图统计信号，统一委托给层级服务。
+            var levels = await _communityHierarchyService.RebuildAsync(index);
+            Console.WriteLine($"分层社区重建完成，共 {levels} 个层级");
         }
 
         /// <summary>
@@ -809,8 +698,11 @@ namespace GraphRag.Net.Domain.Service
         public async Task GraphGlobalAsync(string index)
         {
             _globals_Repositories.Delete(p => p.Index == index);
-            var communitieSummariesList = _communities_Repositories.GetDB().Queryable<Communities>().Where(p => p.Index == index).Select(p => p.Summaries).ToList();
-            var communitieSummaries = string.Join(Environment.NewLine, communitieSummariesList);
+            // 分层社区下只取最粗层级的报告，避免父子报告内容重复堆叠
+            var reports = _communities_Repositories.GetList(p => p.Index == index);
+            var maxLevel = reports.Count == 0 ? 0 : reports.Max(c => c.Level);
+            var communitieSummaries = string.Join(Environment.NewLine,
+                reports.Where(c => c.Level == maxLevel).Select(c => c.Summaries));
             var globalSummaries = await _semanticService.GlobalSummaries(communitieSummaries);
 
             Globals globals = new Globals()
@@ -1117,6 +1009,7 @@ namespace GraphRag.Net.Domain.Service
             await _communitieNodes_Repositories.DeleteAsync(p => p.Index == index);
             await _globals_Repositories.DeleteAsync(p => p.Index == index);
             await _textUnits_Repositories.DeleteAsync(p => p.Index == index);
+            await _claims_Repositories.DeleteAsync(p => p.Index == index);
         }
 
 
@@ -1125,7 +1018,7 @@ namespace GraphRag.Net.Domain.Service
         /// <summary>
         /// 落盘原始文本单元并写入独立向量集合。失败时仅记录日志，不阻断图谱抽取。
         /// </summary>
-        private async Task PersistTextUnitAsync(string index, string textUnitId, string text, SemanticTextMemory textMemory)
+        private async Task PersistTextUnitAsync(string index, string textUnitId, string text, SemanticTextMemory textMemory, string? documentId = null)
         {
             try
             {
@@ -1135,7 +1028,8 @@ namespace GraphRag.Net.Domain.Service
                     Index = index,
                     Text = text,
                     NTokens = EstimateTextTokens(text),
-                    DocumentId = null
+                    DocumentId = documentId,
+                    ContentHash = ComputeHash(text)
                 });
                 await textMemory.SaveInformationAsync(
                     collection: GraphCollections.TextUnits(index),
@@ -1174,6 +1068,10 @@ namespace GraphRag.Net.Domain.Service
                 Console.WriteLine($"补记节点溯源失败：{ex.Message}");
             }
         }
+
+        /// <summary>内容哈希，用于增量索引变更检测。</summary>
+        public static string ComputeHash(string text)
+            => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text ?? string.Empty)));
 
         /// <summary>粗略 token 估算：汉字按 1、其它字符按 0.75。</summary>
         private static int EstimateTextTokens(string? text)
@@ -1483,7 +1381,8 @@ namespace GraphRag.Net.Domain.Service
             var communitiesNodes = _communities_Repositories.GetDB().Queryable<Communities>()
                 .LeftJoin<CommunitieNodes>((c, cn) => c.CommunitieId == cn.CommunitieId)
                 .LeftJoin<Nodes>((c, cn, n) => cn.NodeId == n.Id)
-                .Where((c, cn, n) => nodeIds.Contains(n.Id)).Select((c, cn, n) => new Nodes() { Index = n.Index, Id = n.Id, Name = n.Name, Type = n.Type, Desc = n.Desc }).ToList();
+                // 分层社区下只沿 level 0（最细粒度）回溯，保持既有社区检索语义
+                .Where((c, cn, n) => nodeIds.Contains(n.Id) && cn.Level == 0 && c.Level == 0).Select((c, cn, n) => new Nodes() { Index = n.Index, Id = n.Id, Name = n.Name, Type = n.Type, Desc = n.Desc }).ToList();
             allNodes.AddRange(communitiesNodes);
             var newEdges = GetEdges(index, allNodes);
 

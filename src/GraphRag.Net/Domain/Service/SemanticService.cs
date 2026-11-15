@@ -326,6 +326,126 @@ namespace GraphRag.Net.Domain.Service
                     ["question_count"] = count
                 });
 
+        /// <summary>JSON 提示词的通用执行 + 重试 + 清洗。</summary>
+        private async Task<T?> InvokeJsonAsync<T>(string function, IReadOnlyDictionary<string, object?> args)
+            where T : class
+        {
+            var retryPolicy = Policy.Handle<Exception>().RetryAsync(GraphSysOption.RetryCounnt, (ex, count) =>
+            {
+                Console.WriteLine($"{function}失败，重试{count}次，异常信息{ex.Message}");
+            });
+            return await retryPolicy.ExecuteAsync<T?>(async () =>
+            {
+                var json = await _kernel.InvokePluginAsync("graph", function, args);
+                return JsonConvert.DeserializeObject<T>(json.StripJson());
+            });
+        }
+
+        public Task<ClaimExtractionResult?> ExtractClaimsAsync(string context, int maxClaims)
+            => InvokeJsonAsync<ClaimExtractionResult>("extract_claims",
+                new Dictionary<string, object?>
+                {
+                    ["context"] = context,
+                    ["max_claims"] = maxClaims
+                });
+
+        public Task<string> GetLocalAnswerAsync(string context, string input, string responseType, string history)
+            => _kernel.InvokePluginAsync(
+                "graph", "local_search",
+                new Dictionary<string, object?>
+                {
+                    ["context"] = context,
+                    ["input"] = input,
+                    ["response_type"] = responseType,
+                    ["history"] = history
+                });
+
+        public IAsyncEnumerable<StreamingKernelContent> GetLocalAnswerStreamAsync(string context, string input, string responseType, string history)
+            => _kernel.InvokeStreamingAsync(
+                "graph", "local_search",
+                new Dictionary<string, object?>
+                {
+                    ["context"] = context,
+                    ["input"] = input,
+                    ["response_type"] = responseType,
+                    ["history"] = history
+                });
+
+        public Task<CommunityReportModel?> RollupCommunityReportsAsync(string childReports, int level)
+            => InvokeJsonAsync<CommunityReportModel>("community_rollup",
+                new Dictionary<string, object?>
+                {
+                    ["reports"] = childReports,
+                    ["level"] = level
+                });
+
+        public async Task<CommunityRateResult?> RateCommunityAsync(string query, string report, string title)
+        {
+            try
+            {
+                return await InvokeJsonAsync<CommunityRateResult>("community_rate",
+                    new Dictionary<string, object?>
+                    {
+                        ["query"] = query,
+                        ["report"] = report,
+                        ["title"] = title
+                    });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"社区评分失败：{ex.Message}");
+                return null;
+            }
+        }
+
+        public Task<DriftResponse?> GetDriftPrimerAsync(string query, string communityReports, int folds, int followups)
+            => InvokeJsonAsync<DriftResponse>("drift_primer",
+                new Dictionary<string, object?>
+                {
+                    ["query"] = query,
+                    ["reports"] = communityReports,
+                    ["folds"] = folds,
+                    ["followups"] = followups
+                });
+
+        public Task<DriftResponse?> GetDriftFollowupAsync(string query, string localAnswer, int followups)
+            => InvokeJsonAsync<DriftResponse>("drift_followup",
+                new Dictionary<string, object?>
+                {
+                    ["query"] = query,
+                    ["answer"] = localAnswer,
+                    ["followups"] = followups
+                });
+
+        public Task<string> GetDriftReduceAsync(string hierarchy, string query, string responseType)
+            => _kernel.InvokePluginAsync(
+                "graph", "drift_reduce",
+                new Dictionary<string, object?>
+                {
+                    ["hierarchy"] = hierarchy,
+                    ["query"] = query,
+                    ["response_type"] = responseType
+                });
+
+        public IAsyncEnumerable<StreamingKernelContent> GetDriftReduceStreamAsync(string hierarchy, string query, string responseType)
+            => _kernel.InvokeStreamingAsync(
+                "graph", "drift_reduce",
+                new Dictionary<string, object?>
+                {
+                    ["hierarchy"] = hierarchy,
+                    ["query"] = query,
+                    ["response_type"] = responseType
+                });
+
+        public Task<PromptTuneOutput?> TunePromptsAsync(string sample, string domain, int entityTypesCount)
+            => InvokeJsonAsync<PromptTuneOutput>("prompt_tune",
+                new Dictionary<string, object?>
+                {
+                    ["sample"] = sample,
+                    ["domain"] = domain,
+                    ["entity_types"] = entityTypesCount
+                });
+
         /// <summary>
         /// 获取向量记忆。SK 的 Sqlite/Postgres 连接器已替换为原生实现；
         /// 既有 GraphDBConnection 配置仍被读取以兼容配置文件。
@@ -337,8 +457,7 @@ namespace GraphRag.Net.Domain.Service
             _ = GraphDBConnectionOption.VectorConnection;
             _ = GraphDBConnectionOption.VectorSize;
 
-            var memory = new SemanticTextMemory(new EmbeddingClient(), new VectorStore());
-            return Task.FromResult(memory);
+            return Task.FromResult(VectorMemoryProvider.Create());
         }
     }
 }

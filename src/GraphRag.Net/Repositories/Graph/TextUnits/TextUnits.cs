@@ -24,8 +24,12 @@ namespace GraphRag.Net.Repositories
         /// <summary>预估 token 数</summary>
         public int NTokens { get; set; }
 
-        /// <summary>来源文档标识（预留：多文档导入时使用）</summary>
+        /// <summary>来源文档标识（增量索引使用）</summary>
         [SugarColumn(ColumnDataType = "varchar(512)")]
         public string? DocumentId { get; set; }
+
+        /// <summary>内容哈希（增量索引变更检测）</summary>
+        [SugarColumn(ColumnDataType = "varchar(128)")]
+        public string? ContentHash { get; set; }
     }
 }

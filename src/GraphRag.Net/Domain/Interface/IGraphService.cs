@@ -30,6 +30,8 @@ namespace GraphRag.Net.Domain.Interface
         /// <param name="input"></param>
         /// <returns></returns>
         Task InsertGraphDataAsync(string index, string input);
+        /// <summary>带文档标识的导入，供增量索引按文档管理文本单元。</summary>
+        Task InsertGraphDataWithDocumentAsync(string index, string input, string documentId);
 
         /// <summary>
         ///  搜索递归获取节点相关的所有边和节点

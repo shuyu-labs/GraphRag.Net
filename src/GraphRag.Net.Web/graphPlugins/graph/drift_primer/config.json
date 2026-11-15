@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "description": "DRIFT Primer 阶段",
+  "execution_settings": {
+    "default": {
+      "temperature": 0.2,
+      "response_format": { "type": "json_object" }
+    }
+  }
+}

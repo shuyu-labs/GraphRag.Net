@@ -35,5 +35,12 @@ namespace GraphRag.Net.Repositories
         /// </summary>
         [SugarColumn(ColumnDataType = "varchar(2000)")]
         public string Relationship { get; set; }
+
+        /// <summary>边权重，重复关系合并时累加，对齐 relationships.weight</summary>
+        public double Weight { get; set; } = 1;
+
+        /// <summary>来源文本单元 ID（逗号分隔）</summary>
+        [SugarColumn(ColumnDataType = "text")]
+        public string? TextUnitIds { get; set; }
     }
 }

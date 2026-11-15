@@ -1,4 +1,4 @@
-简体中文 | [English](./README.en.md) 
+﻿简体中文 | [English](./README.en.md) 
 
 ## 这是一个参考GraphRag的dotnet简易实现
 
@@ -14,40 +14,56 @@
 
 ## 功能迭代路线图（对齐 microsoft/graphrag）
 
-本项目定位是「.NET 简化实现」，迭代原则是：**优先补齐决定 GraphRAG 效果的检索闭环，
-不照搬需要重型基础设施（分层 Leiden / NLP 抽取 / 增量索引 / CLI 提示词调优）的部分。**
+本项目定位是「.NET 简化实现」。经过两轮迭代，已把参考实现中**决定效果的核心检索闭环**补齐；
+仍需重型基础设施的部分（精确 Leiden / FastGraphRAG NLP / CLI 工作流）继续按简化方式实现或暂缓。
 
-### 能力差距分析与取舍
+### 能力矩阵（当前状态）
 
-| 参考 GraphRAG 能力 | 迭代前 | 结论 | 取舍理由 |
-| --- | --- | --- | --- |
-| TextUnit + 实体溯源（text_unit_ids） | ❌ 仅存节点文本 | ✅ 本轮加入 | Basic Search、引用溯源、原文增强的共同地基；改动小、收益面广 |
-| Basic Search（基础向量 RAG） | ❌ | ✅ 本轮加入 | 提供基线对照与图谱检索失败时的兜底，成本极低 |
-| 结构化社区报告（title/rating/findings） | ⚠️ 仅纯文本摘要 | ✅ 本轮加入 | 全局检索 map-reduce 的输入质量完全取决于报告结构，必须先补 |
-| Global Search（动态社区选择 + Map-Reduce） | ⚠️ 单次拼接全部摘要 | ✅ 本轮加入 | GraphRAG 最核心差异点；「把所有社区摘要塞进一个 prompt」在大索引下必然超限 |
-| Question Generation（候选追问） | ❌ | ✅ 本轮加入 | 纯提示词能力，无基础设施依赖，直接提升对话体验 |
-| 分层 Leiden 社区（levels/parent/children） | ⚠️ 单层标签传播 | ⏸ 暂缓 | 需引入层级聚类实现；已预留 `Communities.Level`，列为下一轮 |
-| DRIFT Search | ❌ | ⏸ 暂缓 | primer → follow-up → 层级归并三阶段复杂度高，且收益依赖分层社区 |
-| Claims / Covariates 抽取 | ❌ | ⏸ 暂缓 | 参考实现默认关闭且需提示词调优，面向特定风控领域，通用性低 |
-| 自动提示词调优 / 增量索引 / FastGraphRAG(NLP) | ❌ | ⏸ 暂缓 | 依赖 CLI 工作流、文档快照与 Python NLP 栈，与「简化 .NET 库」定位冲突 |
-| 实体度数 / 关系权重排序 | ❌ | ⏸ 暂缓 | 可作为 Local Search 上下文排序的后续优化，本轮先不引入 |
+| 参考 GraphRAG 能力 | 状态 | 实现方式 |
+| --- | --- | --- |
+| TextUnit + 实体溯源 | ✅ | `TextUnits` 表 + `Nodes.TextUnitIds` + 独立向量集合 |
+| Basic Search | ✅ | `SearchBasicAsync`，带 `[Data: Sources]` 引用 |
+| 结构化社区报告 | ✅ | `title / summary / rating / rating_explanation / findings` |
+| Global Search（Map-Reduce） | ✅ | 动态社区选择 → map 打分 → 排序裁剪 → reduce |
+| Local Search 混合上下文 | ✅ | `ILocalSearchService`：entities/relationships/text units/reports/claims/历史按预算融合 |
+| Question Generation | ✅ | 基于社区报告 + 历史问题生成候选追问 |
+| 分层社区（levels/parent/children） | ✅ | `ICommunityHierarchyService`：折叠超节点 + 加权 LPA 递归；无跨社区边时生成覆盖全图的顶层 |
+| 图统计信号（degree/weight/frequency/rank） | ✅ | `IGraphStatsService`，用于 Local/Global 排序与裁剪 |
+| 动态社区选择（LLM 评分） | ✅ | `IDynamicCommunitySelectionService`：keep_parent / num_repeats / max_level 回退 |
+| DRIFT Search | ✅ | `IDriftSearchService`：Primer → Follow-up(Local Search) → 层级 reduce |
+| Claims / Covariates | ✅ | `Claims` 表 + `extract_claims` 提示词，默认关闭，可按需开启 |
+| 增量索引 | ✅ | `IncrementalIndexAsync`：内容哈希变更检测，跳过未变块、清理失效块、重建社区 |
+| 自动提示词调优 | ✅ | `AutoTunePromptsAsync` → `PromptOverrides` 运行时生效 |
+| 精确 Hierarchical Leiden | ⚠️ 近似 | 用确定性加权 LPA 递归近似，无外部图算法库依赖 |
+| 精确 tokenizer（tiktoken） | ⚠️ 近似 | 字符/汉字加权估算 |
+| CLI / 多输入格式 / 多向量后端 / LLM 缓存限流 / 评估基准 | ⏸ 暂缓 | 平台化能力，与简化库定位冲突 |
 
-### 本轮落地的 5 项能力
+### 第二轮落地：P0 + P1
 
-1. **文本单元与溯源**：新增 `TextUnits` 表与独立向量集合。每次导入落盘原始文本块，
-   节点通过 `TextUnitIds` 回溯来源；`DeleteGraph` 同步清理。对应参考实现 Phase 1 / Phase 6。
-2. **结构化社区报告**：`GraphCommunitiesAsync` 现生成
-   `title / summary / rating / rating_explanation / findings` 报告（新提示词 `community_report`），
-   并把社区报告向量化用于动态选择；LLM 输出异常时自动回退既有纯文本摘要链路。
-   `Communities` 表新增 `Title / FullContent / Findings / Rating / RatingExplanation / Size / Level` 字段。
-3. **Global Search（Map-Reduce）**：动态社区选择（按问题语义召回最相关社区，失败回退影响力评分）→
-   按 token 预算分批 → **map** 并发产出带 0-100 评分的关键点 → 过滤/排序/裁剪 →
-   **reduce** 汇总为最终答案（保留 `[Data: Reports (...)]` 引用）。对应 `global_search.md`。
-4. **Basic Search**：直接对原始文本单元做向量 RAG，返回答案 + 可追溯来源片段（`[Data: Sources (...)]`），
-   可用作效果基线与兜底。提供单次与流式接口。
-5. **Question Generation**：基于社区报告/全局摘要与历史问题生成候选追问，UI 可点击回填。
+- **P0-1 分层社区**：`Communities` 新增 `Level / Parent / Children / CommunityRank`，
+  `CommunitieNodes` 新增 `Level`；每层一份结构化报告（上层由子报告汇总）。
+  `GlobalCommunityLevel` 可指定检索层级；既有社区检索固定沿 level 0，语义不回归。
+- **P0-2 Local Search 混合上下文**：按 `LocalTextUnitProp / LocalCommunityProp` 分配预算，
+  融合 6 类候选集并用 degree/weight/rank 排序裁剪。
+- **P0-3 图统计**：导入与社区重建时维护 `Nodes.Degree/Frequency`、`Edges.Weight/TextUnitIds`、
+  `Communities.CommunityRank`；`GetIndexStats` 可观测。
+- **P1** DRIFT Search、Claims 抽取、完整动态社区选择、增量索引、自动提示词调优，见上表。
 
-> 新增能力集中在 `IGraphSearchService`，与既有 `IGraphService` 解耦，不破坏已有调用方。
+> 新增能力分布在 `IGraphSearchService`、`ILocalSearchService`、`IDriftSearchService`、
+> `IGraphIndexService`、`ICommunityHierarchyService`、`IDynamicCommunitySelectionService`、
+> `IGraphStatsService`，与既有 `IGraphService` 解耦，不破坏已有调用方。
+
+### 回归测试
+
+仓库内置零外部框架依赖的离线回归测试（57 项检查），覆盖既有能力防退化 + 全部 P0/P1 新能力 +
+旧库 schema 迁移 + LLM 非法输出容错：
+
+```
+dotnet run --project tests/GraphRag.Net.Regression -f net9.0
+```
+
+通过注入脚本化 `StreamFn` 与确定性哈希向量（`VectorMemoryProvider.SetFactory`），
+全程无需任何 API Key，结果可重复。
 
 ## 核心业务流程
 
@@ -235,7 +251,31 @@ graph TD
     "ConcurrentCoroutines": 4, //map 阶段并发批次数量
     "QuestionCount": 5, //候选追问数量
     "MaxReportFindings": 8, //单个社区报告最多保留的关键发现条数
-    "ResponseType": "多段落、结构清晰的中文回答" //回答长度与格式
+    "ResponseType": "多段落、结构清晰的中文回答", //回答长度与格式
+    "CommunityMaxLevels": 3, //分层社区最大层级数
+    "CommunityMinSize": 1, //层级递归停止阈值
+    "GlobalCommunityLevel": -1, //全局检索使用的层级，-1 为自动（全部）
+    "EnableGraphStats": true, //维护 degree/frequency/weight/rank
+    "LocalTextUnitProp": 0.5, //Local 上下文预算中原文占比
+    "LocalCommunityProp": 0.2, //Local 上下文预算中社区报告占比
+    "LocalMaxContextTokens": 12000, //Local 上下文 token 预算
+    "LocalTopKEntities": 10,
+    "LocalTopKRelationships": 10,
+    "LocalMaxConversationTurns": 5,
+    "EnableClaimExtraction": false, //导入/增量索引时是否自动抽取 claims
+    "ClaimMaxPerTextUnit": 10,
+    "DynamicSelectionMode": "llm", //off / vector / llm（完整实现）
+    "DynamicSearchThreshold": 50, //LLM 评分入选阈值 0-100
+    "DynamicKeepParent": true, //子社区相关时保留父社区
+    "DynamicNumRepeats": 1, //重复评分取最高分
+    "DynamicMaxLevel": -1, //层级回退上限，-1 不限制
+    "DriftKFollowups": 3, //每阶段后续问题数
+    "DriftPrimerFolds": 2, //Primer 折数
+    "DriftNDepth": 2, //递归深度
+    "DriftConcurrency": 3,
+    "IncrementalEnabled": true, //内容哈希变更检测
+    "PromptTuneSampleSize": 5,
+    "PromptTuneEntityTypes": 8
 },
 "GraphSys": {
     "RetryCounnt": 2 //重试次数，使用国产模型可能会出现json提取失败，增加重试次数可提高可用性
@@ -259,22 +299,35 @@ http://localhost:5000/swagger
 
 ![Graoh](https://github.com/xuzeyu91/GraphRag.Net/blob/main/doc/api.png)
 
-### 新增检索接口（对齐 microsoft/graphrag Query Engine）
+### 检索与索引接口（对齐 microsoft/graphrag）
 
 | 接口 | 方法 | 说明 |
 | --- | --- | --- |
-| `/api/Graph/SearchBasic` | POST | 基础向量 RAG：`{ "index", "input" }`，可加 `?topK=5`。返回 `answer` + `sources`（可追溯文本单元） |
-| `/api/Graph/SearchGlobal` | POST | Map-Reduce 全局检索，可加 `?responseType=...&dynamicSelection=true`。返回答案、带评分的关键点、选中社区 |
-| `/api/Graph/GenerateQuestions` | POST | `{ "index", "history": ["历史问题"], "count": 5 }`，返回候选追问列表 |
+| `/api/Graph/SearchBasic` | POST | 基础向量 RAG，可加 `?topK=5`；返回答案 + 可追溯 `sources` |
+| `/api/Graph/SearchGlobal` | POST | Map-Reduce 全局检索，可加 `?responseType=...&dynamicSelection=true` |
+| `/api/Graph/SearchLocal` | POST | Local 混合上下文检索；body 支持 `history` 对话历史 |
+| `/api/Graph/SearchDrift` | POST | DRIFT 三阶段检索；返回答案 + 层级问答树 + 局部检索次数 |
+| `/api/Graph/GenerateQuestions` | POST | 候选追问生成 |
 | `/api/Graph/GetTextUnits` | GET | `?index=`，列出原始文本单元（溯源） |
-| `/api/Graph/GetCommunityReports` | GET | `?index=`，列出结构化社区报告（title/rating/findings） |
+| `/api/Graph/GetCommunityReports` | GET | `?index=`，列出结构化社区报告 |
+| `/api/Graph/GetClaims` | GET | `?index=`，列出 claims |
+| `/api/Graph/ExtractClaims` | POST | `{ "index", "force" }`，抽取 claims |
+| `/api/Graph/IncrementalIndex` | POST | `{ "index", "input", "documentId" }`，按内容哈希增量导入 |
+| `/api/Graph/AutoTunePrompts` | POST | `{ "index", "domain" }`，自动提示词调优 |
+| `/api/Graph/GetPromptOverrides` | GET | 查看当前生效的提示词覆盖 |
+| `/api/Graph/ClearPromptOverrides` | GET | 清除覆盖，恢复磁盘提示词 |
+| `/api/Graph/GetIndexStats` | GET | `?index=`，节点/边/文本单元/社区层级/claims/度数/权重统计 |
+| `/api/Graph/GetCommunityLevels` | GET | `?index=`，分层社区各层级统计 |
 
-服务层对应 `IGraphSearchService`（`SearchBasicAsync` / `SearchGlobalAsync` / `GenerateQuestionsAsync`，
-以及 `SearchBasicStreamAsync` / `SearchGlobalStreamAsync` 流式版本）。
+服务层：`IGraphSearchService`（Basic / Global / QuestionGen）、`ILocalSearchService`（Local）、
+`IDriftSearchService`（DRIFT）、`IGraphIndexService`（Claims / 增量索引 / Prompt Tune / 统计）、
+`ICommunityHierarchyService`（分层社区）、`IDynamicCommunitySelectionService`（动态选择）。
+流式版本：`SearchBasicStreamAsync` / `SearchGlobalStreamAsync` / `SearchLocalStreamAsync` /
+`SearchDriftStreamAsync` / `SearchGraphStreamAsync` 等。
 
-> **索引升级说明**：`GraphCommunitiesAsync` 现在生成结构化社区报告并把报告向量化。
-> 对已有索引，升级后建议重新调用一次 `GraphCommunities` 与 `GraphGlobal`，
-> 以获得新的报告字段与动态社区选择能力；数据库表会自动新增所需列（CodeFirst）。
+> **升级说明**：本轮新增 `Claims` / `TextUnits` 表与多个字段，CodeFirst 会自动为既有数据库加列。
+> 升级后建议对已有索引重新调用一次 `GraphCommunities` 与 `GraphGlobal`，
+> 以生成分层社区报告、图统计信号与社区向量。
 
 ### 也可以使用界面
 ```

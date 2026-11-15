@@ -48,7 +48,18 @@ namespace GraphRag.Net.Repositories
         /// <summary>社区内实体数量（community_reports.size）</summary>
         public int Size { get; set; }
 
-        /// <summary>社区层级：当前单层标签传播固定为 0，预留分层社区检测</summary>
+        /// <summary>社区层级：0 为最细粒度，数值越大越粗</summary>
         public int Level { get; set; }
+
+        /// <summary>父社区 ID（上一层）</summary>
+        [SugarColumn(ColumnDataType = "varchar(128)")]
+        public string? Parent { get; set; }
+
+        /// <summary>子社区 ID 列表（逗号分隔）</summary>
+        [SugarColumn(ColumnDataType = "text")]
+        public string? Children { get; set; }
+
+        /// <summary>社区排序分：成员实体度数之和 + 影响力评分，用于动态选择回退</summary>
+        public double CommunityRank { get; set; }
     }
 }

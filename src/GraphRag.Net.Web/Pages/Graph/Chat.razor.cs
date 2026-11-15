@@ -8,6 +8,8 @@ namespace GraphRag.Net.Web.Pages.Graph
     {
         [Inject] IGraphService _graphService { get; set; }
         [Inject] IGraphSearchService _graphSearchService { get; set; }
+        [Inject] ILocalSearchService _localSearchService { get; set; }
+        [Inject] IDriftSearchService _driftSearchService { get; set; }
         [Inject] IMessageService _message { get; set; }
         private List<UploadFileItem> _fileList = [];
         private List<string> _indexList { get; set; }
@@ -19,14 +21,16 @@ namespace GraphRag.Net.Web.Pages.Graph
         private string _importIndex;
         private string _importText;
 
-        // 对齐 microsoft/graphrag 的四种检索模式
-        private string _searchMode = "local";
+        // 对齐 microsoft/graphrag 的全部检索模式
+        private string _searchMode = "graph";
         private List<SearchModeItem> _modeList = new()
         {
-            new("local", "节点搜索 (Local)"),
-            new("community", "社区搜索 (Community)"),
-            new("global", "全局搜索 (Global Map-Reduce)"),
-            new("basic", "基础检索 (Basic RAG)")
+            new("graph", "节点搜索 (原版)"),
+            new("local", "Local 混合检索"),
+            new("community", "社区搜索"),
+            new("global", "全局搜索 (Map-Reduce)"),
+            new("basic", "基础检索 (Basic RAG)"),
+            new("drift", "DRIFT 检索")
         };
         private List<string> _questions = new();
 
@@ -52,6 +56,8 @@ namespace GraphRag.Net.Web.Pages.Graph
                 {
                     "global" => (await _graphSearchService.SearchGlobalAsync(_index, _input)).Answer,
                     "basic" => (await _graphSearchService.SearchBasicAsync(_index, _input)).Answer,
+                    "local" => (await _localSearchService.SearchLocalAsync(_index, _input)).Answer,
+                    "drift" => (await _driftSearchService.SearchAsync(_index, _input)).Answer,
                     "community" => await _graphService.SearchGraphCommunityAsync(_index, _input),
                     _ => await _graphService.SearchGraphAsync(_index, _input)
                 };

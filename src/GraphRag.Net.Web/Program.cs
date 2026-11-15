@@ -1,4 +1,4 @@
-using AntDesign.ProLayout;
+﻿using AntDesign.ProLayout;
 using GraphRag.Net;
 using GraphRag.Net.Options;
 using GraphRag.Net.Web.Mock;
@@ -37,21 +37,24 @@ builder.Configuration.GetSection("GraphSearch").Get<GraphSearchOption>();
 builder.Configuration.GetSection("PiAgent").Get<PiAgentOption>();
 //builder.Configuration.GetSection("GraphDBConnection").Get<GraphDBConnectionOption>();
 
-// 新增检索能力配置：静态属性需逐项显式绑定
-var graphQuerySection = builder.Configuration.GetSection("GraphQuery");
-GraphQueryOption.BasicSearchTopK = graphQuerySection.GetValue(nameof(GraphQueryOption.BasicSearchTopK), GraphQueryOption.BasicSearchTopK);
-GraphQueryOption.BasicSearchMinRelevance = graphQuerySection.GetValue(nameof(GraphQueryOption.BasicSearchMinRelevance), GraphQueryOption.BasicSearchMinRelevance);
-GraphQueryOption.DynamicCommunitySelection = graphQuerySection.GetValue(nameof(GraphQueryOption.DynamicCommunitySelection), GraphQueryOption.DynamicCommunitySelection);
-GraphQueryOption.MaxCommunityReports = graphQuerySection.GetValue(nameof(GraphQueryOption.MaxCommunityReports), GraphQueryOption.MaxCommunityReports);
-GraphQueryOption.MapBatchTokens = graphQuerySection.GetValue(nameof(GraphQueryOption.MapBatchTokens), GraphQueryOption.MapBatchTokens);
-GraphQueryOption.MapMaxLength = graphQuerySection.GetValue(nameof(GraphQueryOption.MapMaxLength), GraphQueryOption.MapMaxLength);
-GraphQueryOption.ReduceMaxLength = graphQuerySection.GetValue(nameof(GraphQueryOption.ReduceMaxLength), GraphQueryOption.ReduceMaxLength);
-GraphQueryOption.MaxReduceTokens = graphQuerySection.GetValue(nameof(GraphQueryOption.MaxReduceTokens), GraphQueryOption.MaxReduceTokens);
-GraphQueryOption.MinPointScore = graphQuerySection.GetValue(nameof(GraphQueryOption.MinPointScore), GraphQueryOption.MinPointScore);
-GraphQueryOption.ConcurrentCoroutines = graphQuerySection.GetValue(nameof(GraphQueryOption.ConcurrentCoroutines), GraphQueryOption.ConcurrentCoroutines);
-GraphQueryOption.QuestionCount = graphQuerySection.GetValue(nameof(GraphQueryOption.QuestionCount), GraphQueryOption.QuestionCount);
-GraphQueryOption.MaxReportFindings = graphQuerySection.GetValue(nameof(GraphQueryOption.MaxReportFindings), GraphQueryOption.MaxReportFindings);
-GraphQueryOption.ResponseType = graphQuerySection.GetValue(nameof(GraphQueryOption.ResponseType), GraphQueryOption.ResponseType);
+// 新增检索能力配置：反射绑定 GraphQueryOption 的全部静态属性
+BindGraphQueryOptions(builder.Configuration.GetSection("GraphQuery"));
+
+static void BindGraphQueryOptions(IConfiguration section)
+{
+    foreach (var prop in typeof(GraphQueryOption).GetProperties(BindingFlags.Public | BindingFlags.Static))
+    {
+        var child = section.GetSection(prop.Name);
+        if (!child.Exists() || child.Value is null) continue;
+        var raw = child.Value;
+        object? value = null;
+        if (prop.PropertyType == typeof(int) && int.TryParse(raw, out var i)) value = i;
+        else if (prop.PropertyType == typeof(double) && double.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, out var d)) value = d;
+        else if (prop.PropertyType == typeof(bool) && bool.TryParse(raw, out var b)) value = b;
+        else if (prop.PropertyType == typeof(string)) value = raw;
+        if (value is not null) prop.SetValue(null, value);
+    }
+}
 
 // pi.net AI 网关：默认按 GraphOpenAI 配置装配 OpenAiCompletions provider。
 builder.Services.AddGraphRagNet();

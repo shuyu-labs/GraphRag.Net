@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "description": "动态社区选择：LLM 对社区报告相关度评分",
+  "execution_settings": {
+    "default": {
+      "temperature": 0,
+      "response_format": { "type": "json_object" }
+    }
+  }
+}

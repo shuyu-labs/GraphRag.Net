@@ -37,5 +37,33 @@ namespace GraphRag.Net.Domain.Interface
 
         /// <summary>Question Generation：基于上下文与历史问题生成候选追问（原始文本）。</summary>
         Task<string> GenerateQuestionsAsync(string context, string history, int count);
+
+        // ---- P0 / P1 新增 ----
+
+        /// <summary>Claims 抽取（extract_covariates）。</summary>
+        Task<ClaimExtractionResult?> ExtractClaimsAsync(string context, int maxClaims);
+
+        /// <summary>Local Search 混合上下文问答，单次/流式。</summary>
+        Task<string> GetLocalAnswerAsync(string context, string input, string responseType, string history);
+        IAsyncEnumerable<StreamingKernelContent> GetLocalAnswerStreamAsync(string context, string input, string responseType, string history);
+
+        /// <summary>把子社区报告汇总为上一层社区报告（结构化）。</summary>
+        Task<CommunityReportModel?> RollupCommunityReportsAsync(string childReports, int level);
+
+        /// <summary>动态社区选择：LLM 对单个社区报告与问题的相关度打分。</summary>
+        Task<CommunityRateResult?> RateCommunityAsync(string query, string report, string title);
+
+        /// <summary>DRIFT primer：基于社区报告产出初步答案与后续问题。</summary>
+        Task<DriftResponse?> GetDriftPrimerAsync(string query, string communityReports, int folds, int followups);
+
+        /// <summary>DRIFT follow-up：基于局部答案产出细化答案与新的后续问题。</summary>
+        Task<DriftResponse?> GetDriftFollowupAsync(string query, string localAnswer, int followups);
+
+        /// <summary>DRIFT reduce：汇总层级问答树，单次/流式。</summary>
+        Task<string> GetDriftReduceAsync(string hierarchy, string query, string responseType);
+        IAsyncEnumerable<StreamingKernelContent> GetDriftReduceStreamAsync(string hierarchy, string query, string responseType);
+
+        /// <summary>自动提示词调优：产出领域实体类型与三套调优提示词。</summary>
+        Task<PromptTuneOutput?> TunePromptsAsync(string sample, string domain, int entityTypesCount);
     }
 }
