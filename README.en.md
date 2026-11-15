@@ -189,8 +189,13 @@ Configure in appsettings.json
 }
 ```
 ## Startup project
+The Web project multi-targets net9.0 / net10.0 / net11.0, so specify a framework:
 ```
-dotnet run --project GraphRag.Net.Web.csproj
+dotnet run --project GraphRag.Net.Web.csproj -f net9.0
+```
+To run on .NET 11:
+```
+dotnet run --project GraphRag.Net.Web.csproj -f net11.0
 ```
 
 ## After starting the project, you can use the

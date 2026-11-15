@@ -5,9 +5,7 @@ using GraphRag.Net.Web.Mock;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Embeddings;
-using Microsoft.SemanticKernel.TextGeneration;
+using Pi.Ai.Types;
 using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -36,20 +34,18 @@ builder.Services.AddSwaggerGen(c => {
 builder.Configuration.GetSection("GraphOpenAI").Get<GraphOpenAIOption>();
 builder.Configuration.GetSection("TextChunker").Get<TextChunkerOption>();
 builder.Configuration.GetSection("GraphSearch").Get<GraphSearchOption>();
+builder.Configuration.GetSection("PiAgent").Get<PiAgentOption>();
 //builder.Configuration.GetSection("GraphDBConnection").Get<GraphDBConnectionOption>();
 
-//这里可以自定义Kernel,如果不传则使用默认Kernel
+// pi.net AI 网关：默认按 GraphOpenAI 配置装配 OpenAiCompletions provider。
 builder.Services.AddGraphRagNet();
 
-////自定义Kernel 可以实现其他模型的对接实现
-//var kernelBuild = Kernel.CreateBuilder();
-//kernelBuild.Services.AddKeyedSingleton<ITextGenerationService>("mock-text", new MockTextCompletion());
-//kernelBuild.Services.AddKeyedSingleton<IChatCompletionService>("mock-chat", new MockChatCompletion());
-//kernelBuild.Services.AddSingleton((ITextEmbeddingGenerationService)new MockTextEmbeddingGeneratorService());
-//kernelBuild.Services.AddKeyedSingleton("mock-embedding", new MockTextEmbeddingGeneratorService());
-
-//builder.Services.AddGraphRagNet(kernelBuild.Build());
-
+// 自定义模型 / 离线调试：注入自定义 StreamFn（pi.net 的唯一模型出口）。
+// 例如使用仓库自带的 Faux 提供方，无需任何密钥即可跑通 agent loop：
+//   StreamFn mockStream = Faux.CreateStreamFn([Faux.Response.Text("mock answer")]);
+//   var custom = new Kernel(mockStream);
+//   builder.Services.AddGraphRagNet(custom);
+// 也可参考 Mock/MockChatCompletion.cs 中的 MockPiStream。
 
 var app = builder.Build();
 
@@ -62,7 +58,7 @@ if (app.Environment.IsDevelopment())
 else
 {
     app.UseExceptionHandler("/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore/swashbuckle.
     app.UseHsts();
 }
 

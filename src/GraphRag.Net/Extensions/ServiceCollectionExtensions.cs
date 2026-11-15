@@ -1,8 +1,6 @@
 ﻿using System.Reflection;
 using GraphRag.Net;
-using GraphRag.Net.Options;
 using GraphRag.Net.Repositories;
-using GraphRag.Net.Utils;
 using Microsoft.SemanticKernel;
 using SqlSugar;
 
@@ -17,11 +15,11 @@ namespace Microsoft.Extensions.DependencyInjection
         /// 从程序集中加载类型并添加到容器中
         /// </summary>
         /// <param name="services">容器</param>
+        /// <param name="_kernel">可选的自定义 pi.net 网关（可注入自定义 StreamFn 以对接其它模型或离线测试）</param>
         /// <returns></returns>
         public static IServiceCollection AddGraphRagNet(this IServiceCollection services, Kernel _kernel = null)
         {
             Type attributeType = typeof(ServiceDescriptionAttribute);
-            //var refAssembyNames = Assembly.GetExecutingAssembly().GetReferencedAssemblies();
 
             Assembly assembly = Assembly.Load("GraphRag.Net");
 
@@ -50,44 +48,23 @@ namespace Microsoft.Extensions.DependencyInjection
             }
 
             CodeFirst();
-            InitSK(services, _kernel);
+            InitAi(services, _kernel);
 
             return services;
         }
 
         /// <summary>
-        /// 初始化SK
+        /// 初始化 pi.net AI 网关（原 InitSK）。
+        /// 保留自定义 Kernel 参数以兼容既有调用方；未传入时按既有 GraphOpenAI 配置装配。
+        /// 提示词仍从 graphPlugins 目录按需加载，无需预导入插件。
         /// </summary>
-        /// <param name="services"></param>
-        /// <param name="_kernel">可以提供自定义Kernel</param>
-        static void InitSK(IServiceCollection services,Kernel _kernel = null)
+        static void InitAi(IServiceCollection services, Kernel _kernel = null)
         {
-            var handler = new OpenAIHttpClientHandler();
-            services.AddTransient<Kernel>((serviceProvider) =>
-            {
-                if (_kernel == null)
-                {
-                    _kernel = Kernel.CreateBuilder()
-                    .AddOpenAIChatCompletion(
-                      modelId: GraphOpenAIOption.ChatModel,
-                      apiKey: GraphOpenAIOption.Key,
-                      httpClient: new HttpClient(handler)
-                         )
-                    .Build();
-                }
-                //导入插件
-                if (!_kernel.Plugins.Any(p => p.Name == "graph"))
-                {
-                    var pluginPatth = Path.Combine(RepoFiles.SamplePluginsPath(), "graph");
-                    Console.WriteLine($"pluginPatth:{pluginPatth}");
-                    _kernel.ImportPluginFromPromptDirectory(pluginPatth);
-                }
-                return _kernel;
-            });
+            services.AddTransient<Kernel>(_ => _kernel ?? new Kernel());
         }
 
         /// <summary>
-        /// 初始化DB
+        /// 初始化DB（会自动为 [SugarTable] 的向量记录实体建表）
         /// </summary>
         static void CodeFirst()
         {

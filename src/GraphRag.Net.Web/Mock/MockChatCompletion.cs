@@ -1,48 +1,34 @@
-﻿using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.Encodings.Web;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Text.Unicode;
+﻿// pi.net-based mock. Semantic Kernel's IChatCompletionService mock was removed
+// with the SK migration; a StreamFn is now the only model boundary.
+using Pi.Ai.Stream;
+using Pi.Ai.Types;
 
 namespace GraphRag.Net.Web.Mock
 {
-    public class MockChatCompletion : IChatCompletionService
+    public static class MockChatCompletion
     {
-        private readonly Dictionary<string, object?> _attributes = new();
-        private string _chatId;
-
-
-        private static readonly JsonSerializerOptions _jsonSerializerOptions = new()
+        /// <summary>
+        /// A scripted pi.net StreamFn that always streams the given text.
+        /// Inject it via <c>new Kernel(MockChatCompletion.CreateStreamFn("..."))</c>
+        /// to run the whole agent loop without any API key.
+        /// </summary>
+        public static StreamFn CreateStreamFn(string? text = null)
         {
-            NumberHandling = JsonNumberHandling.AllowReadingFromString,
-            Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
-        };
-
-        public IReadOnlyDictionary<string, object?> Attributes => _attributes;
-
-        public MockChatCompletion()
-        {
-
-        }
-
-        public async Task<IReadOnlyList<ChatMessageContent>> GetChatMessageContentsAsync(ChatHistory chatHistory, PromptExecutionSettings? executionSettings = null, Kernel? kernel = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            StringBuilder sb = new();
-            string result = $"这是一条Mock数据，便于聊天测试，你的消息是：{chatHistory.LastOrDefault().ToString()}";
-            return [new(AuthorRole.Assistant, result.ToString())];
-        }
-
-        public async IAsyncEnumerable<StreamingChatMessageContent> GetStreamingChatMessageContentsAsync(ChatHistory chatHistory, PromptExecutionSettings? executionSettings = null, Kernel? kernel = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            StringBuilder sb = new();
-            string result = $"这是一条Mock数据，便于聊天测试，你的消息是：{chatHistory.LastOrDefault().ToString()}";
-            foreach (var c in result)
+            return (model, context, options, cancellationToken) =>
             {
-                yield return new StreamingChatMessageContent(AuthorRole.Assistant, c.ToString());
-            }
+                var stream = new AssistantMessageEventStream();
+                var last = context.Messages.LastOrDefault();
+                var reply = text ?? $"这是一条Mock数据，便于聊天测试，你的消息是：{last}";
+                var message = new AssistantMessage(
+                    new ContentBlock[] { new TextContent(reply) }, StopReason.Stop);
+
+                stream.Push(new AssistantMessageEvent.Start(message));
+                stream.Push(new AssistantMessageEvent.TextDelta(0, reply, 0, message));
+                stream.Push(new AssistantMessageEvent.TextEnd(0, reply, message));
+                stream.Push(new AssistantMessageEvent.Done(StopReason.Stop, message));
+                stream.End(message);
+                return Task.FromResult<IAssistantMessageEventStream>(stream);
+            };
         }
     }
 }

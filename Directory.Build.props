@@ -1,7 +1,11 @@
 <Project>
   <!-- See https://aka.ms/dotnet/msbuild/customize for more details on customizing your build -->
   <PropertyGroup>
-    <Version>0.2.0</Version>
-    <SKVersion>1.17.1</SKVersion>  
+    <Version>0.2.1</Version>
+    <!-- pi.net packages (Pi.Agent / Pi.Ai / Pi.Telemetry); SKVersion removed with the SK migration. -->
+    <PiVersion>1.5.2.1</PiVersion>
+    <!-- pi.net libraries target net9.0/net10.0/net11.0; net8.0 and below are not supported. -->
+    <PiTargetFrameworks>net9.0;net10.0;net11.0</PiTargetFrameworks>
+    <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
 </Project>

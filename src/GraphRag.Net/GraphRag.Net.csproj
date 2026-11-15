@@ -1,14 +1,14 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net6.0;net7.0;net8.0</TargetFrameworks>
+    <TargetFrameworks>$(PiTargetFrameworks)</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <Version>$(Version)</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Authors>许泽宇</Authors>
     <Product>GraphRag.Net</Product>
-    <Company>xuzeyu</Company>  
+    <Company>xuzeyu</Company>
     <Title>GraphRag.Net</Title>
     <Description>
       GraphRag for .NET –这是一个参考GraphRag的DotNet简易实现。
@@ -19,22 +19,24 @@
       Element Summaries → Graph Communities：使用社区检测算法将图划分为社区。
       Graph Communities → Community Summaries：为每个社区生成摘要。
       Community Summaries → Community Answers → Global Answer：使用社区摘要生成局部答案，然后汇总这些局部答案以生成全局答案。
+      AI 能力由 pi.net (Pi.Agent / Pi.Ai) 的 agent loop 驱动，已移除 Semantic Kernel 依赖。
       商务需求联系微信xuzeyu91
     </Description>
     <PackageProjectUrl>https://github.com/xuzeyu91/GraphRag.Net</PackageProjectUrl>
-    <Tags>AI, Rag, GraphRag</Tags>
+    <Tags>AI, Rag, GraphRag, pi.net, Agent</Tags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <NoWarn>CA1050,CA1707,CA2007,VSTHRD111,CS1591,RCS1110,CA5394,SKEXP0001,SKEXP0002,SKEXP0003,SKEXP0004,SKEXP0010,SKEXP0011,,SKEXP0012,SKEXP0020,SKEXP0021,SKEXP0022,SKEXP0023,SKEXP0024,SKEXP0025,SKEXP0026,SKEXP0027,SKEXP0028,SKEXP0029,SKEXP0030,SKEXP0031,SKEXP0032,SKEXP0040,SKEXP0041,SKEXP0042,SKEXP0050,SKEXP0051,SKEXP0052,SKEXP0053,SKEXP0054,SKEXP0055,SKEXP0060,SKEXP0061,SKEXP0101,SKEXP0102</NoWarn>
+    <NoWarn>CA1050,CA1707,CA2007,VSTHRD111,CS1591,RCS1110,CA5394</NoWarn>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <DocumentationFile>GraphRag.Net.xml</DocumentationFile>
+    <!-- Let the SDK emit one XML doc per TFM. A fixed DocumentationFile path made
+         all TFMs race on the same file and could leave a 0-byte XML in the output,
+         which SqlSugar tries (and fails) to parse at startup. -->
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.SemanticKernel" Version="$(SKVersion)" />
-    <PackageReference Include="Microsoft.SemanticKernel.Core" Version="$(SKVersion)" />
-    <PackageReference Include="Microsoft.SemanticKernel.Plugins.Core" Version="$(SKVersion)-alpha" />
-    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Postgres" Version="$(SKVersion)-alpha" />
-    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Sqlite" Version="$(SKVersion)-alpha" />
-    <PackageReference Include="Microsoft.SemanticKernel.Plugins.Memory" Version="$(SKVersion)-alpha" />
+    <!-- pi.net: unified LLM API + agent loop runtime (replaces Semantic Kernel). -->
+    <PackageReference Include="Pi.Agent" Version="$(PiVersion)" />
+    <PackageReference Include="Pi.Ai" Version="$(PiVersion)" />
+    <!-- DI abstractions were previously pulled in transitively by SK. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
     <PackageReference Include="Polly" Version="8.5.0" />
     <PackageReference Include="SqlSugarCore" Version="5.1.4.171" />
   </ItemGroup>

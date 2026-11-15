@@ -190,8 +190,13 @@ graph TD
 }
 ```
 ## 启动项目
+Web 项目多目标 net9.0 / net10.0 / net11.0，运行时需指定框架：
 ```
-dotnet run --project GraphRag.Net.Web.csproj
+dotnet run --project GraphRag.Net.Web.csproj -f net9.0
+```
+改用 .NET 11 启动：
+```
+dotnet run --project GraphRag.Net.Web.csproj -f net11.0
 ```
 
 ## 启动项目后可以通过

@@ -9,6 +9,7 @@ using Microsoft.SemanticKernel.Memory;
 using Microsoft.SemanticKernel.Text;
 using Newtonsoft.Json;
 using SqlSugar;
+using System.Text.Json;
 
 namespace GraphRag.Net.Domain.Service
 {
@@ -20,7 +21,8 @@ namespace GraphRag.Net.Domain.Service
         ICommunities_Repositories _communities_Repositories,
         ICommunitieNodes_Repositories _communitieNodes_Repositories,
         IGlobals_Repositories _globals_Repositories,
-        ICommunityDetectionService _communityDetectionService
+        ICommunityDetectionService _communityDetectionService,
+        Kernel _kernel
         ) : IGraphService
     {
         /// <summary>
@@ -530,6 +532,15 @@ namespace GraphRag.Net.Domain.Service
         /// <returns></returns>
         public async Task<string> SearchGraphAsync(string index, string input)
         {
+            // pi.net agent loop: 循环决策（判断是否证据充足）/ 多步骤执行（多次检索工具）/
+            // 结果迭代（用每次工具结果细化查询），失败时回退到经典单提示词链路。
+            if (PiAgentOption.EnableAgentLoop)
+            {
+                var agentAnswer = await RunGraphAnswerAgentAsync(index, input, preferCommunity: false);
+                if (!string.IsNullOrWhiteSpace(agentAnswer)) return agentAnswer;
+                Console.WriteLine("[GraphAgent] 智能体未产出答案，回退经典检索链路");
+            }
+
             var graphModel = await SearchGraphModel(index, input);
             string answer = await _semanticService.GetGraphAnswerAsync(JsonConvert.SerializeObject(graphModel), input);
             return answer;
@@ -562,6 +573,13 @@ namespace GraphRag.Net.Domain.Service
         /// <returns></returns>
         public async Task<string> SearchGraphCommunityAsync(string index, string input)
         {
+            if (PiAgentOption.EnableAgentLoop)
+            {
+                var agentAnswer = await RunGraphAnswerAgentAsync(index, input, preferCommunity: true);
+                if (!string.IsNullOrWhiteSpace(agentAnswer)) return agentAnswer;
+                Console.WriteLine("[GraphAgent] 智能体未产出答案，回退经典社区检索链路");
+            }
+
             string answer = "";
             var graphModel = await SearchGraphCommunityModel(index, input);
             var global = _globals_Repositories.GetFirst(p => p.Index == index)?.Summaries;
@@ -811,6 +829,151 @@ namespace GraphRag.Net.Domain.Service
 
             Console.WriteLine($"关系优化完成，共优化了 {optimizedCount} 个关系");
         }
+
+        #region pi.net Agent Loop（检索式图谱问答）
+
+        /// <summary>
+        /// 用 pi.net 的 agent loop 完成"检索 → 判断 → 再检索 → 收敛"的问答流程。
+        /// 模型可以多次调用检索工具并改写查询，工具结果回流进 transcript 供下一轮决策，
+        /// 直到调用 finalize_answer 收敛。任何异常都返回空串，由调用方回退经典链路。
+        /// </summary>
+        private async Task<string> RunGraphAnswerAgentAsync(string index, string input, bool preferCommunity)
+        {
+            try
+            {
+                string? finalAnswer = null;
+                var searchTool = preferCommunity ? "expand_community" : "search_graph";
+
+                var request = new AgentRequest
+                {
+                    MaxTurns = Math.Max(1, PiAgentOption.MaxTurns),
+                    SystemPrompt =
+                        "你是知识图谱问答智能体。工作流程：\n" +
+                        "1) 先调用检索工具获取与问题相关的图谱证据；\n" +
+                        "2) 检查证据是否足以回答；不足时改写关键词再次检索（最多可多轮）；\n" +
+                        "3) 证据充分后调用 finalize_answer 工具给出最终中文答案。\n" +
+                        $"优先使用工具 {searchTool}；也可用其它检索工具补充全局/社区信息。\n" +
+                        "只依据检索到的图谱事实作答；若确实无相关证据，明确说明。不要编造。",
+                    UserPrompt = $"图谱索引：{index}\n用户问题：{input}\n请开始检索并给出最终答案。",
+                    Tools = new[]
+                    {
+                        MakeTool(
+                            "search_graph",
+                            "按自然语言查询检索相关图谱子图，返回节点与关系。",
+                            "query", "用于检索的关键词或改写后的问题",
+                            async (json, _) =>
+                            {
+                                var q = GetString(json, "query") ?? input;
+                                var model = await SearchGraphModel(index, q);
+                                return CompactGraph(model, "local");
+                            }),
+                        MakeTool(
+                            "expand_community",
+                            "按社区算法检索更广的相关节点与关系，用于补充上下文。",
+                            "query", "用于检索的关键词或改写后的问题",
+                            async (json, _) =>
+                            {
+                                var q = GetString(json, "query") ?? input;
+                                var model = await SearchGraphCommunityModel(index, q);
+                                return CompactGraph(model, "community");
+                            }),
+                        MakeTool(
+                            "finalize_answer",
+                            "提交最终答案并结束本轮智能体运行。",
+                            "answer", "面向用户的最终答案文本",
+                            (json, _) =>
+                            {
+                                finalAnswer = GetString(json, "answer");
+                                return Task.FromResult("最终答案已记录。");
+                            },
+                            terminate: true)
+                    }
+                };
+
+                var result = await _kernel.RunAgentAsync(request);
+                if (!string.IsNullOrWhiteSpace(finalAnswer)) return finalAnswer!;
+                return result.Success ? result.FinalText : string.Empty;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GraphAgent] 智能体检索异常，回退经典链路：{ex.Message}");
+                return string.Empty;
+            }
+        }
+
+        private static AgentToolSpec MakeTool(
+            string name,
+            string description,
+            string argName,
+            string argDescription,
+            Func<JsonElement, CancellationToken, Task<string>> execute,
+            bool terminate = false)
+            => new AgentToolSpec
+            {
+                Name = name,
+                Description = description,
+                Parameters = new Dictionary<string, object?>
+                {
+                    ["type"] = "object",
+                    ["properties"] = new Dictionary<string, object?>
+                    {
+                        [argName] = new Dictionary<string, object?>
+                        {
+                            ["type"] = "string",
+                            ["description"] = argDescription
+                        }
+                    },
+                    ["required"] = new[] { argName }
+                },
+                Execute = execute,
+                Terminate = terminate
+            };
+
+        private static string? GetString(JsonElement json, string property)
+        {
+            if (json.ValueKind == JsonValueKind.Object
+                && json.TryGetProperty(property, out var value)
+                && value.ValueKind == JsonValueKind.String)
+                return value.GetString();
+            return null;
+        }
+
+        private static string CompactGraph(GraphModel model, string scope)
+        {
+            if (model?.Nodes is null || model.Nodes.Count == 0)
+                return JsonConvert.SerializeObject(new
+                {
+                    scope,
+                    nodes = Array.Empty<object>(),
+                    edges = Array.Empty<object>(),
+                    hint = "未检索到相关节点，请换用更具体或不同的关键词重试。"
+                });
+
+            var nodes = model.Nodes.Take(40).Select(n => new
+            {
+                id = n.Id,
+                name = n.Name,
+                type = n.Type,
+                desc = n.Desc.ConvertToString()
+            }).ToList();
+            var edges = (model.Edges ?? new List<Edges>()).Take(80).Select(e => new
+            {
+                source = e.Source,
+                target = e.Target,
+                relationship = e.Relationship
+            }).ToList();
+
+            return JsonConvert.SerializeObject(new
+            {
+                scope,
+                totalNodes = model.Nodes.Count,
+                totalEdges = model.Edges?.Count ?? 0,
+                nodes,
+                edges
+            });
+        }
+
+        #endregion
 
         public async Task DeleteGraph(string index)
         {
